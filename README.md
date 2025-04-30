@@ -1,4 +1,4 @@
-# SelfDB - https://selfdb.io
+# [SelfDB](https://selfdb.io)
 
 SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreSQL database, authentication, object storage, and real-time capabilities in a single, containerized platform.
 
