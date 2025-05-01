@@ -16,6 +16,7 @@ SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreS
 
 - Docker and Docker Compose
 - Git (for cloning the repository)
+- SSL certificate and domain for production deployments
 
 ## Quick Start
 
@@ -177,6 +178,13 @@ To run the sample app:
 
 The app will be available at `http://localhost:5173`.
 
+**Note for Production Use:**
+When deploying the sample app to production, modify the `.env` file to use your SSL-secured API URL:
+```
+VITE_API_URL=https://api.your-domain.com/api/v1
+VITE_ANON_KEY=your_anon_key
+```
+
 ## Development
 
 ### Rebuilding Containers
@@ -276,6 +284,107 @@ For production deployment, consider the following:
 2. Set up a reverse proxy (like Nginx) with SSL/TLS
 3. Configure proper backup strategies for the data directories
 4. Set up monitoring and logging
+
+### Production URL Configuration
+
+When deploying to production, you must configure secure URLs with SSL for both the admin interface and API access:
+
+1. **Frontend Admin URL**:
+   - The frontend should be accessed through a secure domain with SSL
+   - Update your reverse proxy (Nginx, etc.) to point to your SelfDB frontend container
+   - Example Nginx configuration:
+     ```nginx
+     server {
+         listen 443 ssl;
+         server_name admin.yourdomain.com;
+         
+         # SSL configuration
+         ssl_certificate /path/to/certificate.crt;
+         ssl_certificate_key /path/to/private.key;
+         
+         location / {
+             proxy_pass http://localhost:3000;
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+         }
+         
+         # WebSocket Secure (WSS) support for frontend
+         location /ws/ {
+             proxy_pass http://localhost:3000;
+             proxy_http_version 1.1;
+             proxy_set_header Upgrade $http_upgrade;
+             proxy_set_header Connection "upgrade";
+             proxy_set_header Host $host;
+             proxy_cache_bypass $http_upgrade;
+         }
+     }
+     ```
+
+2. **Backend API URL**:
+   - The API should also be accessed through a secure domain with SSL
+   - Update the same or a different reverse proxy to point to your SelfDB backend container
+   - Example Nginx configuration:
+     ```nginx
+     server {
+         listen 443 ssl;
+         server_name api.yourdomain.com;
+         
+         # SSL configuration
+         ssl_certificate /path/to/certificate.crt;
+         ssl_certificate_key /path/to/private.key;
+         
+         location / {
+             proxy_pass http://localhost:8000;
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+             
+             # WebSocket support for real-time features
+             proxy_http_version 1.1;
+             proxy_set_header Upgrade $http_upgrade;
+             proxy_set_header Connection "upgrade";
+         }
+
+         # Dedicated location for realtime WebSocket connections
+         location /realtime/ {
+             proxy_pass http://localhost:8000;
+             proxy_http_version 1.1;
+             proxy_set_header Upgrade $http_upgrade;
+             proxy_set_header Connection "upgrade";
+             proxy_set_header Host $host;
+             proxy_cache_bypass $http_upgrade;
+         }
+         
+         # WebSocket Secure (WSS) support for websocket connections
+         location /ws/ {
+             proxy_pass http://localhost:8000;
+             proxy_http_version 1.1;
+             proxy_set_header Upgrade $http_upgrade;
+             proxy_set_header Connection "upgrade";
+             proxy_set_header Host $host;
+             proxy_cache_bypass $http_upgrade;
+         }
+     }
+     ```
+
+3. **Sample Apps Configuration**:
+   - For any sample or production apps built using SelfDB, update the API URL in their environment files:
+   - Example `.env` file for a React/Vite app:
+     ```
+     VITE_API_URL=https://api.yourdomain.com/api/v1
+     VITE_ANON_KEY=your_anon_key
+     ```
+
+**Summary of Production URL Configuration:**
+- Admin UI access requires a secure domain (HTTPS) with SSL certificates
+- API access requires a secure domain with proper WebSocket support
+- All WebSocket connections must use WSS (WebSocket Secure) in production
+- All sample apps must be configured with HTTPS URLs pointing to your secured API
+- The configuration includes specific Nginx location blocks for different connection types:
+  - Standard HTTP/HTTPS requests (`/`)
+  - WebSocket connections for real-time features (`/ws/`)
+  - Dedicated realtime connections (`/realtime/`)
+
+**Important**: Always use HTTPS URLs in production to ensure security for your data and authentication tokens.
 
 ## Backup and Restore
 
@@ -390,4 +499,3 @@ If you encounter issues with cloud functions:
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
