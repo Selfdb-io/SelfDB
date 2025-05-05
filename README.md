@@ -1,6 +1,6 @@
 # [SelfDB](https://selfdb.io)
 
-SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreSQL database, authentication, object storage, and real-time capabilities in a single, containerized platform.
+SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreSQL database, authentication, object storage, real-time capabilities, and cloud functions in a single, containerized platform.
 
 ## Features
 
@@ -11,6 +11,7 @@ SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreS
 - **Cloud Functions**: Serverless functions using Deno 2.0 for custom business logic
 - **Containerized**: Easy deployment with Docker and Docker Compose
 - **Production-Ready**: Includes security, logging, and monitoring considerations
+- **Dual License**: Available under both Commercial and MIT (Community Edition) licenses
 
 ## Prerequisites
 
@@ -69,11 +70,39 @@ SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreS
 
 SelfDB consists of the following components:
 
-- **PostgreSQL**: Database for storing application data
-- **MinIO**: Object storage for files
-- **Backend API**: FastAPI application providing REST endpoints and WebSocket connections
-- **Frontend**: React application for user interface
-- **Deno Runtime**: Serverless function execution environment using Deno 2.0
+```mermaid
+graph LR
+    subgraph "User / Client Applications"
+        direction TB
+        U[User Browser]
+        C[Client Apps]
+    end
+
+    subgraph "SelfDB Platform (Dockerized)"
+        F["Frontend (Admin Dashboard)"]
+        B["Backend API (FastAPI)"]
+        subgraph S["Services"]
+            direction TB
+            M["MinIO Object Storage"]
+            DR["Deno Runtime (Cloud Functions)"]
+            D["PostgreSQL Database"]
+            M <--> D
+            DR <--> D
+            M <--> DR
+        end
+        F --> B
+        B <--> S
+    end
+
+    U --> F
+    C --> B
+```
+
+-   **PostgreSQL**: Database for storing application data.
+-   **MinIO**: Object storage for files.
+-   **Backend API**: FastAPI application providing REST endpoints and WebSocket connections.
+-   **Frontend**: React application for user interface and admin dashboard.
+-   **Deno Runtime**: Serverless function execution environment using Deno 2.0.
 
 ## Anonymous Access
 
@@ -423,79 +452,4 @@ To restore from a backup:
    ```
 
 4. Restore from backups:
-   ```bash
-   # For PostgreSQL data
-   docker run --rm -v postgres_data:/data -v $(pwd):/backup alpine sh -c "rm -rf /data/* && tar -xzf /backup/postgres-backup.tar.gz -C /"
-
-   # For MinIO data
-   docker run --rm -v minio_data:/data -v $(pwd):/backup alpine sh -c "rm -rf /data/* && tar -xzf /backup/minio-backup.tar.gz -C /"
    ```
-
-5. Start the containers:
-   ```bash
-   docker-compose up -d
-   ```
-
-## Troubleshooting
-
-### Volume Issues
-
-If you encounter issues with the Docker volumes, you can use the cleanup script to reset your environment:
-
-```bash
-./cleanup.sh
-```
-
-This will:
-1. Stop all containers
-2. Remove all Docker volumes used by the application
-
-After running the cleanup script, you can start fresh with:
-
-```bash
-./start.sh
-```
-
-**Note:** The cleanup script will delete all your data, so make sure you have backups if needed.
-
-### Checking Volume Status
-
-To check the status of your Docker volumes:
-
-```bash
-docker volume ls
-```
-
-To inspect a specific volume (e.g., postgres_data):
-
-```bash
-docker volume inspect postgres_data
-```
-
-### Cloud Function Issues
-
-If you encounter issues with cloud functions:
-
-1. Check the Deno runtime logs:
-   ```bash
-   docker logs selfdb_deno
-   ```
-
-2. Verify the function file exists in the `./functions` directory:
-   ```bash
-   ls -la ./functions
-   ```
-
-3. Check the health of the Deno runtime service:
-   ```bash
-   curl http://localhost:8090/health
-   ```
-
-4. If functions aren't loading properly, restart the Deno container:
-   ```bash
-   docker restart selfdb_deno
-   ```
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
