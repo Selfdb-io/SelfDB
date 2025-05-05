@@ -21,11 +21,8 @@ SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreS
 
 ## Quick Start
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/selfdb.git
-   cd selfdb
-   ```
+1. Unzip and open the downloaded direction:
+  
 
 2. Create a `.env` file from the example:
    ```bash
