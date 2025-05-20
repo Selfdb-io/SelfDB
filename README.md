@@ -6,7 +6,7 @@ SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreS
 
 - **PostgreSQL Database**: Powerful, reliable database for your application data
 - **Authentication**: Secure user authentication with JWT tokens and anonymous access capabilities
-- **Object Storage**: S3-compatible file storage using MinIO
+- **Object Storage**: Integrated file storage using the SelfDB Storage Service
 - **Real-time Updates**: WebSocket-based real-time data synchronization
 - **Cloud Functions**: Serverless functions using Deno 2.0 for custom business logic
 - **Containerized**: Easy deployment with Docker and Docker Compose
@@ -21,8 +21,11 @@ SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreS
 
 ## Quick Start
 
-1. Unzip and open the downloaded direction:
-  
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/selfdb.git
+   cd selfdb
+   ```
 
 2. Create a `.env` file from the example:
    ```bash
@@ -60,7 +63,7 @@ SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreS
 6. Access the application:
    - Frontend: http://localhost:3000
    - API: http://localhost:8000
-   - MinIO Console: http://localhost:9001 (login with MINIO_ROOT_USER and MINIO_ROOT_PASSWORD from .env)
+   - Storage Service: http://localhost:8001
    - Deno Runtime: http://localhost:8090 (internal service for cloud functions)
 
 ## Architecture
@@ -80,12 +83,12 @@ graph LR
         B["Backend API (FastAPI)"]
         subgraph S["Services"]
             direction TB
-            M["MinIO Object Storage"]
+            SS["Storage Service"]
             DR["Deno Runtime (Cloud Functions)"]
             D["PostgreSQL Database"]
-            M <--> D
+            SS <--> D
             DR <--> D
-            M <--> DR
+            SS <--> DR
         end
         F --> B
         B <--> S
@@ -96,7 +99,7 @@ graph LR
 ```
 
 -   **PostgreSQL**: Database for storing application data.
--   **MinIO**: Object storage for files.
+-   **Storage Service**: Integrated file storage service for buckets and files.
 -   **Backend API**: FastAPI application providing REST endpoints and WebSocket connections.
 -   **Frontend**: React application for user interface and admin dashboard.
 -   **Deno Runtime**: Serverless function execution environment using Deno 2.0.
@@ -230,7 +233,7 @@ The backend is built with FastAPI and provides:
 - REST API endpoints for authentication, file management, etc.
 - WebSocket connections for real-time updates
 - Database models and migrations
-- Integration with MinIO for object storage
+- Integration with the Storage Service for object storage
 - Cloud function management and deployment
 - Code validation and linting services for the function editor
 
@@ -323,17 +326,17 @@ When deploying to production, you must configure secure URLs with SSL for both t
      server {
          listen 443 ssl;
          server_name admin.yourdomain.com;
-         
+
          # SSL configuration
          ssl_certificate /path/to/certificate.crt;
          ssl_certificate_key /path/to/private.key;
-         
+
          location / {
              proxy_pass http://localhost:3000;
              proxy_set_header Host $host;
              proxy_set_header X-Real-IP $remote_addr;
          }
-         
+
          # WebSocket Secure (WSS) support for frontend
          location /ws/ {
              proxy_pass http://localhost:3000;
@@ -354,16 +357,16 @@ When deploying to production, you must configure secure URLs with SSL for both t
      server {
          listen 443 ssl;
          server_name api.yourdomain.com;
-         
+
          # SSL configuration
          ssl_certificate /path/to/certificate.crt;
          ssl_certificate_key /path/to/private.key;
-         
+
          location / {
              proxy_pass http://localhost:8000;
              proxy_set_header Host $host;
              proxy_set_header X-Real-IP $remote_addr;
-             
+
              # WebSocket support for real-time features
              proxy_http_version 1.1;
              proxy_set_header Upgrade $http_upgrade;
@@ -379,7 +382,7 @@ When deploying to production, you must configure secure URLs with SSL for both t
              proxy_set_header Host $host;
              proxy_cache_bypass $http_upgrade;
          }
-         
+
          # WebSocket Secure (WSS) support for websocket connections
          location /ws/ {
              proxy_pass http://localhost:8000;
@@ -426,8 +429,8 @@ To backup your data:
    # For PostgreSQL data
    docker run --rm -v postgres_data:/data -v $(pwd):/backup alpine tar -czf /backup/postgres-backup.tar.gz /data
 
-   # For MinIO data
-   docker run --rm -v minio_data:/data -v $(pwd):/backup alpine tar -czf /backup/minio-backup.tar.gz /data
+   # For Storage Service data
+   docker run --rm -v storage_data:/data -v $(pwd):/backup alpine tar -czf /backup/storage-backup.tar.gz /data
    ```
 
 To restore from a backup:
@@ -439,13 +442,13 @@ To restore from a backup:
 
 2. Remove existing volumes (if any):
    ```bash
-   docker volume rm postgres_data minio_data || true
+   docker volume rm postgres_data storage_data || true
    ```
 
 3. Create empty volumes:
    ```bash
    docker volume create postgres_data
-   docker volume create minio_data
+   docker volume create storage_data
    ```
 
 4. Restore from backups:
