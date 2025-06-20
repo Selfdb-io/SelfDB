@@ -1,6 +1,14 @@
-# SelfDB
+# [SelfDB](https://selfdb.io)
 
 SelfDB is a powerful, self-hosted, open-source alternative to Supabase that provides a complete backend platform for modern applications. Built with Python (FastAPI), React, and Deno, it combines PostgreSQL database, authentication, object storage, real-time capabilities, and serverless functions in a single, containerized solution with no vendor lock-in.
+
+## 📦 Get SelfDB Latest
+
+Access the newest version at [https://selfdb.io](https://selfdb.io)
+- **Paid version is always one major version ahead** (currently v0.0.3 vs v0.0.2)
+- **Includes all the latest features and improvements**
+- **100% open source** - you're supporting development, not buying a license
+- Same MIT license, just newer features released earlier
 
 ## 🚀 Key Features
 
