@@ -7,7 +7,7 @@ SelfDB is a powerful, self-hosted, open-source alternative to Supabase that prov
 ### Core Infrastructure
 - **PostgreSQL Database (v17)**: Full-featured PostgreSQL with migrations, triggers, and advanced SQL capabilities
 - **Authentication & Authorization**: JWT-based auth with refresh tokens, user management, and anonymous API key access
-- **Custom Object Storage**: Built-in storage service for file/bucket management (no external S3/MinIO required)
+- **Custom Object Storage**: Built-in storage service for file/bucket management (no external S3 required)
 - **Real-time Engine**: WebSocket-powered real-time subscriptions for database changes and events
 - **Serverless Functions**: Deno 2.0 runtime for TypeScript/JavaScript cloud functions with multiple trigger types
 - **Admin Dashboard**: Full-featured React UI for database management, SQL editing, and platform administration
