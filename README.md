@@ -1,17 +1,33 @@
-# [SelfDB](https://selfdb.io)
+# SelfDB
 
-SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreSQL database, authentication, object storage, real-time capabilities, and cloud functions in a single, containerized platform.
+SelfDB is a powerful, self-hosted, open-source alternative to Supabase that provides a complete backend platform for modern applications. Built with Python (FastAPI), React, and Deno, it combines PostgreSQL database, authentication, object storage, real-time capabilities, and serverless functions in a single, containerized solution with no vendor lock-in.
 
-## Features
+## 🚀 Key Features
 
-- **PostgreSQL Database**: Powerful, reliable database for your application data
-- **Authentication**: Secure user authentication with JWT tokens and anonymous access capabilities
-- **Object Storage**: Integrated file storage using the SelfDB Storage Service
-- **Real-time Updates**: WebSocket-based real-time data synchronization
-- **Cloud Functions**: Serverless functions using Deno 2.0 for custom business logic
-- **Containerized**: Easy deployment with Docker and Docker Compose
-- **Production-Ready**: Includes security, logging, and monitoring considerations
-- **Dual License**: Available under both Commercial and MIT (Community Edition) licenses
+### Core Infrastructure
+- **PostgreSQL Database (v17)**: Full-featured PostgreSQL with migrations, triggers, and advanced SQL capabilities
+- **Authentication & Authorization**: JWT-based auth with refresh tokens, user management, and anonymous API key access
+- **Custom Object Storage**: Built-in storage service for file/bucket management (no external S3/MinIO required)
+- **Real-time Engine**: WebSocket-powered real-time subscriptions for database changes and events
+- **Serverless Functions**: Deno 2.0 runtime for TypeScript/JavaScript cloud functions with multiple trigger types
+- **Admin Dashboard**: Full-featured React UI for database management, SQL editing, and platform administration
+
+### Developer Experience
+- **Docker Compose Deployment**: Single command to run the entire platform
+- **RESTful API**: FastAPI-powered API with automatic OpenAPI/Swagger documentation
+- **SQL Editor**: Built-in SQL editor with syntax highlighting and schema visualization
+- **Hot Reload**: Development mode with automatic reloading for all services
+- **Version Control**: Function versioning with history tracking
+- **Anonymous Access**: Built-in support for public APIs via API keys
+
+### Production Features
+- **Security**: HTTPS/SSL support, secure password hashing, CORS configuration
+- **Monitoring**: Activity tracking, logging, and real-time activity feeds
+- **Data Persistence**: Docker volumes for reliable data storage
+- **Backup & Restore**: Built-in backup strategies for databases and files
+- **CI/CD Ready**: Includes Gitea workflows for automated deployments
+- **Open Source**: MIT licensed - free to use, modify, and distribute
+
 
 ## Prerequisites
 
@@ -21,8 +37,11 @@ SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreS
 
 ## Quick Start
 
-1. Buy from selfdb.io
-   - Download zip repo and open it
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Selfdb-io/SelfDB
+   cd SelfDB
+   ```
 
 2. Create a `.env` file from the example:
    ```bash
@@ -63,91 +82,58 @@ SelfDB is a self-hosted, open-source alternative to Supabase, providing PostgreS
    - Storage Service: http://localhost:8001
    - Deno Runtime: http://localhost:8090 (internal service for cloud functions)
 
-## Architecture
+## 🏗️ Architecture
 
-SelfDB consists of the following components:
+SelfDB uses a modern microservices architecture with all components containerized:
 
 ```mermaid
-graph LR
-    subgraph "User / Client Applications"
-        direction TB
-        U[User Browser]
-        C[Client Apps]
+graph TB
+    subgraph "Client Layer"
+        U[Web Browser]
+        SDK[SelfDB SDK]
+        APP[Your Applications]
     end
 
-    subgraph "SelfDB Platform (Dockerized)"
-        F["Frontend (Admin Dashboard)"]
-        B["Backend API (FastAPI)"]
-        subgraph S["Services"]
-            direction TB
-            SS["Storage Service"]
-            DR["Deno Runtime (Cloud Functions)"]
-            D["PostgreSQL Database"]
-            SS <--> D
-            DR <--> D
-            SS <--> DR
+    subgraph "SelfDB Platform"
+        subgraph "API Gateway"
+            API[Backend API<br/>FastAPI :8000]
         end
-        F --> B
-        B <--> S
+        
+        subgraph "Services"
+            ADMIN[Admin Dashboard<br/>React + Vite :3000]
+            STORAGE[Storage Service<br/>FastAPI :8001]
+            DENO[Deno Runtime<br/>Functions :8090]
+        end
+        
+        subgraph "Data Layer"
+            PG[(PostgreSQL v17<br/>:5432)]
+            VOL[Docker Volumes<br/>postgres_data<br/>storage_data<br/>functions]
+        end
     end
 
-    U --> F
-    C --> B
+    U --> ADMIN
+    SDK --> API
+    APP --> API
+    
+    ADMIN --> API
+    API --> PG
+    API --> STORAGE
+    API --> DENO
+    
+    STORAGE --> VOL
+    DENO --> PG
+    DENO --> API
+    
+    PG --> VOL
 ```
 
--   **PostgreSQL**: Database for storing application data.
--   **Storage Service**: Integrated file storage service for buckets and files.
--   **Backend API**: FastAPI application providing REST endpoints and WebSocket connections.
--   **Frontend**: React application for user interface and admin dashboard.
--   **Deno Runtime**: Serverless function execution environment using Deno 2.0.
+### Component Details
 
-## Client SDKs
-
-SelfDB provides official client SDKs for different platforms:
-
-### Swift Package (iOS/macOS/tvOS/watchOS)
-
-A native Swift package for Apple platforms with full async/await support:
-
-```swift
-// Swift Package Manager
-dependencies: [
-    .package(url: "https://github.com/rodgersmag/SelfDB.git", from: "1.0.0")
-]
-
-// Usage
-import SelfDB
-
-let config = SelfDBConfig(
-    apiURL: "https://your-selfdb-api.com/api/v1",
-    storageURL: "https://your-selfdb-storage.com",
-    apiKey: "your-anon-key"
-)
-
-let selfDB = SelfDB(config: config)
-
-// Authenticate
-let response = await selfDB.auth.login(email: "user@example.com", password: "password")
-
-// Database operations
-let tables = await selfDB.database.listTables()
-
-// Storage operations
-let buckets = await selfDB.storage.listBuckets()
-```
-
-**Features:**
-- Type-safe Swift Codable models
-- Modern async/await patterns
-- Multi-platform support (iOS 15+, macOS 12+, tvOS 15+, watchOS 8+)
-- Authentication, Database, Storage, and future Realtime support
-- Comprehensive test coverage
-
-For detailed documentation, see [README-Swift.md](README-Swift.md).
-
-### JavaScript/TypeScript SDK
-
-Located in the `js-sdk/` directory with full TypeScript support and comprehensive documentation.
+- **Backend API (FastAPI)**: Core API server handling authentication, database operations, real-time subscriptions, and coordination between services
+- **Admin Dashboard (React)**: Full-featured UI for database management, SQL editing, user management, and function development
+- **Storage Service**: Custom-built object storage service for file and bucket management with streaming support
+- **Deno Runtime**: Isolated environment for executing serverless functions with TypeScript/JavaScript support
+- **PostgreSQL Database**: Primary data store with support for advanced features like triggers, LISTEN/NOTIFY, and migrations
 
 ## Anonymous Access
 
@@ -170,52 +156,7 @@ The SelfDB backend implements anonymous access through a dedicated authenticatio
 - API endpoints can distinguish between authenticated users, anonymous users, and unauthorized requests
 - This allows for fine-grained access control based on authentication status
 
-### Using the Anonymous API Key
 
-To access public resources without authentication:
-
-```bash
-# Example using curl
-curl -H "apikey: YOUR_ANON_KEY" http://localhost:8000/api/v1/buckets/public
-```
-
-Where `YOUR_ANON_KEY` is the value generated in your `.env` file.
-
-#### Client Implementation
-
-In client applications, you typically want to use JWT tokens for authenticated users and fall back to the anon key for unauthenticated users. Here's an example using axios interceptors:
-
-```typescript
-// Get the API URL and anonymous key from environment variables
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-const ANON_KEY = import.meta.env.VITE_ANON_KEY;
-
-// Create a base axios instance for SelfDB API
-const API = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Add authentication to all requests
-API.interceptors.request.use(config => {
-  // First check for a token (authenticated user)
-  const token = localStorage.getItem('access_token');
-
-  if (token && config.headers) {
-    // Use Bearer token for authenticated requests
-    config.headers.Authorization = `Bearer ${token}`;
-  } else if (ANON_KEY && config.headers) {
-    // Fall back to anonymous key for unauthenticated requests
-    config.headers.apikey = ANON_KEY;
-  }
-
-  return config;
-});
-```
-
-This pattern allows your application to seamlessly handle both authenticated and anonymous users.
 
 ### Security Considerations
 
@@ -235,22 +176,9 @@ This pattern allows your application to seamlessly handle both authenticated and
 
 ### Sample Application
 
-For a complete example of anonymous access implementation, see the `open-discussion-board` sample application in the `@sample-apps/` directory. This application demonstrates:
-
-- Support for both authenticated and anonymous users
-- Anonymous posting of topics and comments without requiring registration
-- Media upload support for both anonymous and authenticated users
-- Proper implementation of the anon key in API requests
-- File uploads to public buckets using anonymous access
-
-To run the sample app:
-
-1. Navigate to the sample app directory: `cd sample-apps/open-discussion-board`
-2. Install dependencies: `npm install`
-3. Set up environment variables: `./setup.sh` (automatically copies the ANON_KEY from your SelfDB `.env` file)
-4. Start the development server: `npm run dev`
-
-The app will be available at `http://localhost:5173`.
+  1. https://github.com/Selfdb-io/selfdb-expo-app
+  2. https://github.com/Selfdb-io/selfdb-swift-app
+  3. https://github.com/Selfdb-io/selfdb-react-vite
 
 **Note for Production Use:**
 When deploying the sample app to production, modify the `.env` file to use your SSL-secured API URL:
@@ -307,48 +235,36 @@ npm install
 npm start
 ```
 
+### SDK
+
+SelfDB provides python, Javascript and swift SDKS:
+1. https://github.com/Selfdb-io/js-sdk
+2. https://github.com/Selfdb-io/selfdb-ios
+3. https://github.com/Selfdb-io/selfdb-py
+
+
 ### Cloud Functions
 
-SelfDB includes a serverless function execution environment powered by Deno 2.0. This allows you to write and deploy custom business logic that runs in response to HTTP requests, scheduled events, or database changes.
+SelfDB's serverless functions platform powered by Deno 2.0 enables you to run custom business logic without managing servers:
 
-Key features of the cloud functions system:
+#### Function Types
 
-- **Deno 2.0 Runtime**: Modern JavaScript/TypeScript runtime with built-in security
-- **Multiple Trigger Types**: Functions can be triggered by HTTP requests, scheduled events, or database changes
-- **Environment Variables**: Securely store and access configuration and secrets
-- **Version History**: Track changes to your functions with automatic versioning
-- **Database Access**: Direct access to your PostgreSQL database from functions
-- **Event-Driven Architecture**: Build reactive applications with real-time database triggers
+1. **HTTP Functions**: REST API endpoints that respond to HTTP requests
+2. **Database Triggers**: React to INSERT, UPDATE, or DELETE operations on tables
+3. **Scheduled Functions**: Run on a cron schedule for periodic tasks
+4. **Event Functions**: Respond to custom events from your application
+5. **Setup Functions**: One-time initialization functions for data setup
 
-Cloud functions are stored in the `./functions` directory and are automatically loaded by the Deno runtime container. The frontend provides a complete management interface for creating, editing, and deploying functions.
+#### Features
 
-Example function:
+- **TypeScript/JavaScript Support**: Write functions in modern JS/TS with full Deno API access
+- **Environment Variables**: Secure configuration and secrets management
+- **Direct Database Access**: Query your PostgreSQL database from functions
+- **Version Control**: Automatic versioning with rollback capabilities
+- **Hot Reload**: Instant updates in development mode
+- **Validation & Linting**: Built-in code quality checks
 
-```typescript
-// Simple HTTP function
-export default async function handler(req) {
-  // Access environment variables
-  const dbUrl = Deno.env.get("DATABASE_URL");
 
-  // Process HTTP request
-  if (req instanceof Request) {
-    const url = new URL(req.url);
-    const params = Object.fromEntries(url.searchParams.entries());
-
-    return new Response(JSON.stringify({
-      message: "Hello from SelfDB function!",
-      method: req.method,
-      params: params
-    }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-
-  // For non-HTTP invocations (scheduled runs, etc.)
-  console.log("Function executed at:", new Date().toISOString());
-  return { success: true };
-}
-```
 
 ## Production Deployment
 
@@ -366,80 +282,12 @@ When deploying to production, you must configure secure URLs with SSL for both t
 1. **Frontend Admin URL**:
    - The frontend should be accessed through a secure domain with SSL
    - Update your reverse proxy (Nginx, etc.) to point to your SelfDB frontend container
-   - Example Nginx configuration:
-     ```nginx
-     server {
-         listen 443 ssl;
-         server_name admin.yourdomain.com;
-
-         # SSL configuration
-         ssl_certificate /path/to/certificate.crt;
-         ssl_certificate_key /path/to/private.key;
-
-         location / {
-             proxy_pass http://localhost:3000;
-             proxy_set_header Host $host;
-             proxy_set_header X-Real-IP $remote_addr;
-         }
-
-         # WebSocket Secure (WSS) support for frontend
-         location /ws/ {
-             proxy_pass http://localhost:3000;
-             proxy_http_version 1.1;
-             proxy_set_header Upgrade $http_upgrade;
-             proxy_set_header Connection "upgrade";
-             proxy_set_header Host $host;
-             proxy_cache_bypass $http_upgrade;
-         }
-     }
-     ```
+ 
 
 2. **Backend API URL**:
    - The API should also be accessed through a secure domain with SSL
    - Update the same or a different reverse proxy to point to your SelfDB backend container
-   - Example Nginx configuration:
-     ```nginx
-     server {
-         listen 443 ssl;
-         server_name api.yourdomain.com;
-
-         # SSL configuration
-         ssl_certificate /path/to/certificate.crt;
-         ssl_certificate_key /path/to/private.key;
-
-         location / {
-             proxy_pass http://localhost:8000;
-             proxy_set_header Host $host;
-             proxy_set_header X-Real-IP $remote_addr;
-
-             # WebSocket support for real-time features
-             proxy_http_version 1.1;
-             proxy_set_header Upgrade $http_upgrade;
-             proxy_set_header Connection "upgrade";
-         }
-
-         # Dedicated location for realtime WebSocket connections
-         location /realtime/ {
-             proxy_pass http://localhost:8000;
-             proxy_http_version 1.1;
-             proxy_set_header Upgrade $http_upgrade;
-             proxy_set_header Connection "upgrade";
-             proxy_set_header Host $host;
-             proxy_cache_bypass $http_upgrade;
-         }
-
-         # WebSocket Secure (WSS) support for websocket connections
-         location /ws/ {
-             proxy_pass http://localhost:8000;
-             proxy_http_version 1.1;
-             proxy_set_header Upgrade $http_upgrade;
-             proxy_set_header Connection "upgrade";
-             proxy_set_header Host $host;
-             proxy_cache_bypass $http_upgrade;
-         }
-     }
-     ```
-
+  
 3. **Sample Apps Configuration**:
    - For any sample or production apps built using SelfDB, update the API URL in their environment files:
    - Example `.env` file for a React/Vite app:
@@ -460,240 +308,6 @@ When deploying to production, you must configure secure URLs with SSL for both t
 
 **Important**: Always use HTTPS URLs in production to ensure security for your data and authentication tokens.
 
-## Testing
-
-SelfDB includes comprehensive test suites to verify functionality and ensure quality across all components.
-
-### Test Structure
-
-The project contains two main test suites:
-
-#### 1. API Test Suite (`tests/` folder)
-- **Purpose**: End-to-end testing of all SelfDB backend API endpoints
-- **Framework**: Python with `requests` and `websockets` libraries
-- **Coverage**: 84 test cases across 15 test suites
-- **Features**: Real-time WebSocket testing, comprehensive reporting, cleanup automation
-
-#### 2. Storage Service Test Suite (`storage_service/tests/` folder)
-- **Purpose**: Unit and performance testing of the storage service
-- **Framework**: pytest with async support
-- **Coverage**: File operations, large file handling, performance benchmarks
-- **Features**: Configurable test file sizes, performance metrics
-
-### Running the API Test Suite
-
-The main test suite tests all backend API endpoints and can be run against both local and production instances.
-
-#### Prerequisites
-
-Install required Python packages:
-```bash
-pip install requests websockets
-```
-
-#### Basic Usage
-
-```bash
-# Run all tests against default endpoints (api.selfdb.io)
-cd tests
-python run_all_tests.py
-```
-
-#### Testing Against Local Development Instance
-
-To test against a local SelfDB instance:
-
-```bash
-# Set environment variables for local testing
-export BACKEND_URL="http://localhost:8000/api/v1"
-export STORAGE_URL="http://localhost:8001"
-export API_KEY="your_anon_key_from_env_file"
-
-# Run the tests
-cd tests
-python run_all_tests.py
-```
-
-#### Running Individual Test Modules
-
-You can run individual test modules independently:
-
-```bash
-cd tests
-
-# Test health endpoints
-python test_01_health.py
-
-# Test authentication
-python test_02_auth.py
-
-# Test file management
-python test_05_files.py
-
-# Test storage service
-python test_10_storage.py
-```
-
-#### Test Configuration
-
-The tests use configuration from `tests/common/config.py`:
-- **BACKEND_URL**: Backend API endpoint (default: https://api.selfdb.io/api/v1)
-- **STORAGE_URL**: Storage service endpoint (default: https://storage.selfdb.io)
-- **API_KEY**: Anonymous API key for public resource access
-- **TEST_EMAIL_BASE**: Base name for test user accounts
-- **ADMIN_EMAIL**: Admin account for privileged operations
-
-#### Test Output
-
-Tests generate detailed reports including:
-- Individual endpoint test results
-- WebSocket real-time functionality verification
-- Test statistics and success rates
-- Failed test details with status codes and URLs
-- Cleanup summary for created test resources
-
-### Running the Storage Service Test Suite
-
-The storage service tests focus on file operations and performance validation.
-
-#### Prerequisites
-
-```bash
-cd storage_service
-pip install pytest pytest-asyncio httpx aiofiles pydantic-settings fastapi python-multipart requests
-```
-
-#### Basic Usage
-
-```bash
-cd storage_service
-
-# Run with default settings (10MB test files)
-./run_tests.sh
-
-# Run with specific file sizes
-./run_tests.sh --size=small     # 10MB
-./run_tests.sh --size=medium    # 50MB
-./run_tests.sh --size=large     # 500MB
-./run_tests.sh --size=extra_large # 1GB
-./run_tests.sh --size=all       # All sizes (warning: takes long time)
-```
-
-#### Environment Setup
-
-The storage tests automatically create a virtual environment and set up:
-- Temporary storage directory: `/tmp/selfdb-test-storage`
-- Test API key: `test-api-key`
-- Required environment variables: `SECRET_KEY`, `ANON_KEY`
-- Configurable test file sizes
-
-#### Direct pytest Usage
-
-You can also run pytest directly:
-
-```bash
-cd storage_service
-
-# Set required environment variables
-export STORAGE_SERVICE_API_KEY="test-api-key"
-export STORAGE_BASE_PATH="/tmp/selfdb-test-storage"
-export TEST_FILE_SIZE="small"
-export SECRET_KEY="test-secret-key-for-storage-service-tests"
-export ANON_KEY="test-anon-key"
-
-# Install dependencies
-pip install pytest pytest-asyncio fastapi uvicorn aiofiles
-
-# Run tests
-pytest tests/ -v
-```
-
-**Note**: If you encounter network timeouts during dependency installation, you can skip the storage service tests and focus on the main API tests instead.
-
-### Test Suites Overview
-
-#### API Test Modules
-
-1. **test_01_health.py** - Health check endpoints
-2. **test_02_auth.py** - User authentication and registration
-3. **test_03_users.py** - User management operations
-4. **test_04_buckets.py** - Bucket creation and management
-5. **test_05_files.py** - File upload, download, and metadata
-6. **test_06_tables.py** - Database table operations
-7. **test_07_sql.py** - SQL query execution
-8. **test_08_functions.py** - Cloud function management
-9. **test_09_cors.py** - CORS configuration testing
-10. **test_10_storage.py** - Storage service integration
-11. **test_11_errors.py** - Error condition handling
-12. **test_12_realtime.py** - WebSocket real-time features
-
-#### Storage Service Test Modules
-
-1. **test_requirements.py** - Core functionality validation
-2. **test_large_file_operations.py** - Large file handling
-3. **test_download_performance.py** - Performance benchmarks
-4. **conftest.py** - pytest fixtures and setup
-5. **test_env.py** - Environment configuration
-
-### Prerequisites for Local Testing
-
-To run tests against a local SelfDB instance:
-
-1. **Start SelfDB services**:
-   ```bash
-   docker-compose up -d
-   ```
-
-2. **Wait for services to be ready** (usually 30-60 seconds)
-
-3. **Set environment variables**:
-   ```bash
-   export BACKEND_URL="http://localhost:8000/api/v1"
-   export STORAGE_URL="http://localhost:8001"
-   export API_KEY="$(grep ANON_KEY .env | cut -d= -f2)"
-   ```
-
-4. **Run tests**:
-   ```bash
-   cd tests
-   python run_all_tests.py
-   ```
-
-### Continuous Integration
-
-For automated testing in CI/CD pipelines:
-
-```bash
-# Install dependencies
-pip install requests websockets pytest pytest-asyncio httpx aiofiles
-
-# Set environment for local testing
-export BACKEND_URL="http://localhost:8000/api/v1"
-export STORAGE_URL="http://localhost:8001"
-
-# Start services
-docker-compose up -d
-
-# Wait for services
-sleep 60
-
-# Run API tests
-cd tests && python run_all_tests.py
-
-# Run storage tests
-cd ../storage_service && ./run_tests.sh --size=small
-```
-
-### Test Data Management
-
-The test suites automatically:
-- Create temporary test users, buckets, and files
-- Clean up created resources after test completion
-- Use isolated environments to avoid conflicts
-- Generate unique identifiers to prevent collisions
-
-See [TEST_COVERAGE.md](TEST_COVERAGE.md) for detailed test coverage information.
-
 ## Backup and Restore
 
 To backup your data:
@@ -702,6 +316,7 @@ To backup your data:
    ```bash
    docker-compose down
    ```
+  
 
 2. Backup the Docker volumes:
    ```bash
@@ -729,3 +344,48 @@ To restore from a backup:
    docker volume create postgres_data
    docker volume create storage_data
    ```
+
+4. Restore from backup:
+   ```bash
+   # For PostgreSQL data
+   docker run --rm -v postgres_data:/data -v $(pwd):/backup alpine tar -xzf /backup/postgres-backup.tar.gz -C /
+
+   # For Storage Service data
+   docker run --rm -v storage_data:/data -v $(pwd):/backup alpine tar -xzf /backup/storage-backup.tar.gz -C /
+   ```
+
+5. Start the containers:
+   ```bash
+   docker-compose up -d
+   ```
+
+## 🎯 Use Cases
+
+SelfDB is perfect for:
+
+- **SaaS Applications**: Multi-tenant apps with user authentication and file storage
+- **Mobile App Backends**: Real-time sync and offline-first applications
+- **Web Applications**: Full-stack apps with database, auth, and file handling
+- **API Services**: RESTful APIs with built-in documentation and authentication
+- **Internal Tools**: Company dashboards and admin panels with secure access
+- **IoT Platforms**: Real-time data ingestion and event processing
+- **Content Management**: File storage and management with public/private access
+- **Analytics Dashboards**: Real-time data visualization with WebSocket updates
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our contributing guidelines and code of conduct.
+
+## 📜 License
+
+SelfDB is open source software licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.
+
+
+## 🙏 Acknowledgments
+
+SelfDB is inspired by Supabase and Firebase. 
+We aim to provide a truly self-hosted alternative with no compromises on features or developer experience.
+
+---
+
+Built with ❤️ by the SelfDB community.

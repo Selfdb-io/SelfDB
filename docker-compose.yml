@@ -1,0 +1,176 @@
+
+services:
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:17 # Using PostgreSQL version 17
+    container_name: selfdb_postgres
+    environment:
+      # Database credentials and name loaded from .env file
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Fix for permission issues on some systems
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      # Using named volume for PostgreSQL data persistence
+      # Ensures data survives container restarts/recreation
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Exposes PostgreSQL port to the host (optional, useful for dev/debugging)
+      - "5432:5432"
+    restart: unless-stopped # Policy to restart the container if it stops unexpectedly
+    networks:
+      # Connects the service to the custom bridge network
+      - selfdb_network
+    healthcheck:
+      # Checks if the database is ready to accept connections
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Storage Service (FastAPI-based file storage)
+  storage_service:
+    build:
+      context: ./storage_service
+      dockerfile: Dockerfile
+    container_name: selfdb_storage_service
+    env_file:
+      - .env
+    environment:
+      - STORAGE_PATH=/data/storage
+      - BASE_URL=http://localhost
+    volumes:
+      - selfdb_files:/data/storage
+      - ./storage_service/app:/app/app
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - selfdb_network
+      - selfdb_selfdb  #your docker for nginx proxy manager for production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # Backend API Service (FastAPI)
+  backend:
+    build:
+      context: ./backend # Specifies the build context directory
+      dockerfile: Dockerfile # Specifies the Dockerfile name
+    container_name: selfdb_backend
+    env_file:
+      # Loads environment variables from the .env file in the root directory
+      - .env
+    volumes:
+      # Mounts the backend application code directory for hot-reloading during development
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/scripts:/app/scripts
+      # Mount functions_data volume instead of local folder
+      - functions_data:/functions
+    ports:
+      # Maps the host port (from .env) to the container port (8000)
+      - "${API_PORT:-8000}:8000" # Default to 8000 if API_PORT not set
+    depends_on:
+      # Ensures postgres and minio are started and healthy before the backend starts
+      postgres:
+        condition: service_healthy
+      storage_service:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - selfdb_network
+      - selfdb_selfdb #your docker for nginx proxy manager for production
+    # Run initialization on startup
+    command: /bin/bash -c "/app/scripts/init.sh && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    healthcheck: # Added healthcheck for the backend
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 15 # Increased retries to give init.sh more time
+      start_period: 30s # Allow time for init.sh and uvicorn to start
+
+  # Frontend Service (React App served by Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # Pass the API URL as a build argument for production builds
+      args:
+        ARG_REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8000/api/v1} # Default for safety
+    container_name: selfdb_frontend
+    ports:
+      # Maps the host port (from .env) to the Nginx container port (80)
+      - "${FRONTEND_PORT:-3000}:80" # Default to 3000 if FRONTEND_PORT not set
+    depends_on:
+      # Frontend depends on the backend API being available
+      - backend
+    restart: unless-stopped
+    networks:
+      - selfdb_network
+      - selfdb_selfdb #your docker for nginx proxy manager for production
+
+  # Deno Runtime Service for Cloud Functions
+  deno-runtime:
+    image: denoland/deno:2.2.11
+    container_name: selfdb_deno
+    # Ensure same env as backend for DB credentials
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - FUNCTION_TIMEOUT=30000
+      - LOG_LEVEL=info
+    volumes:
+      # Mount the functions_data volume to /functions
+      - functions_data:/functions
+      # Mount the local server.ts to a temporary location for preloading
+      - ./functions/server.ts:/app/server.ts.original
+    working_dir: /functions
+    # Command to preload server.ts if not present, then run it
+    command: >
+      sh -c "
+        if [ ! -f /functions/server.ts ]; then
+          echo 'Preloading server.ts into volume...';
+          cp /app/server.ts.original /functions/server.ts;
+        fi &&
+        deno run --allow-net --allow-read --allow-env /functions/server.ts
+      "
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend: # Added dependency on backend
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - selfdb_network
+      - selfdb_selfdb #your docker for nginx proxy manager for production
+
+# Custom Bridge Network
+# Allows containers to communicate with each other using service names
+networks:
+  selfdb_network:
+    driver: bridge
+  # External network for Nginx proxy manager 
+  selfdb_selfdb:
+     external: true 
+
+# Named volumes for data persistence
+# These volumes will be managed by Docker and persist across container lifecycles
+volumes:
+  postgres_data:
+    driver: local
+  selfdb_files:
+    driver: local
+  functions_data: # New volume for functions
+    driver: local
