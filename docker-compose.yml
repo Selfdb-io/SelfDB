@@ -51,7 +51,7 @@ services:
     restart: unless-stopped
     networks:
       - selfdb_network
-      - selfdb_selfdb  #your docker for nginx proxy manager for production
+      #- selfdb_selfdb  #your docker for nginx proxy manager for production
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 10s
@@ -88,7 +88,7 @@ services:
     restart: unless-stopped
     networks:
       - selfdb_network
-      - selfdb_selfdb #your docker for nginx proxy manager for production
+      #- selfdb_selfdb #your docker for nginx proxy manager for production
     # Run initialization on startup
     command: /bin/bash -c "/app/scripts/init.sh && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     healthcheck: # Added healthcheck for the backend
@@ -116,7 +116,7 @@ services:
     restart: unless-stopped
     networks:
       - selfdb_network
-      - selfdb_selfdb #your docker for nginx proxy manager for production
+      #- selfdb_selfdb #your docker for nginx proxy manager for production
 
   # Deno Runtime Service for Cloud Functions
   deno-runtime:
@@ -154,7 +154,7 @@ services:
     restart: unless-stopped
     networks:
       - selfdb_network
-      - selfdb_selfdb #your docker for nginx proxy manager for production
+      #- selfdb_selfdb #your docker for nginx proxy manager for production
 
 # Custom Bridge Network
 # Allows containers to communicate with each other using service names
@@ -162,8 +162,8 @@ networks:
   selfdb_network:
     driver: bridge
   # External network for Nginx proxy manager 
-  selfdb_selfdb:
-     external: true 
+  #selfdb_selfdb:
+     #external: true 
 
 # Named volumes for data persistence
 # These volumes will be managed by Docker and persist across container lifecycles
