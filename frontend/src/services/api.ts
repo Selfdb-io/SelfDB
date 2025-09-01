@@ -1,10 +1,10 @@
 import axios, { AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-// Use Vite environment variables for API URL and anon key
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+// Use relative path for API - Nginx will proxy to the backend container
+const API_BASE_URL = '/api/v1';
 const ANON_KEY = import.meta.env.VITE_ANON_KEY || '';
 
-// Create an axios instance with base URL from environment
+// Create an axios instance with base URL
 const api = axios.create({
   baseURL: API_BASE_URL,
 });
@@ -155,7 +155,7 @@ api.interceptors.response.use(
 export const APP_NAME = 'SelfDB';
 export const APP_VERSION = '1.1.0';
 
-// Export the Swagger docs URL for use in the frontend
-export const SWAGGER_DOCS_URL = `${API_BASE_URL.replace(/\/api\/v1$/, '')}/redoc`;
+// Export the Swagger docs URL for use in the frontend - use relative path
+export const SWAGGER_DOCS_URL = '/redoc';
 
 export default api; 

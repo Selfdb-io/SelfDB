@@ -15,12 +15,6 @@ RUN npm install
 # Copy the rest of the application source code
 COPY . .
 
-# Declare the build argument for the API URL.
-# This MUST be provided during the 'docker build' command for production.
-ARG ARG_REACT_APP_API_URL
-# Set the environment variable for the build process using the build argument.
-ENV REACT_APP_API_URL=$ARG_REACT_APP_API_URL
-
 # Build the React application for production.
 # This creates optimized static files in the /app/dist directory.
 RUN npm run build

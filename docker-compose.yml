@@ -103,9 +103,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      # Pass the API URL as a build argument for production builds
-      args:
-        ARG_REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8000/api/v1} # Default for safety
     container_name: selfdb_frontend
     ports:
       # Maps the host port (from .env) to the Nginx container port (80)

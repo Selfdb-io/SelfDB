@@ -100,7 +100,7 @@ origins = [
     "http://localhost",
     "http://localhost:3000",
     "http://frontend:3000",
-    "https://opd.selfdb.io",  # Docker service name
+    "https://100.83.47.61:3000",  # Docker service name
     # Add your production frontend URL here
 ]
 

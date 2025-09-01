@@ -45,7 +45,14 @@ export const uploadFile = async (file: File, bucketId: string): Promise<FileItem
   
   // Extract response data
   const { file_metadata, presigned_upload_info } = initiateResponse.data;
-  const { upload_url, upload_method } = presigned_upload_info;
+  let { upload_url, upload_method } = presigned_upload_info;
+  
+  // Convert absolute URLs to relative paths for proxy
+  if (upload_url.includes('://')) {
+    const urlObj = new URL(upload_url);
+    upload_url = urlObj.pathname;
+    console.log(`Converted upload URL to relative path: ${upload_url}`);
+  }
   
   console.log(`Got presigned URL: ${upload_url}, method: ${upload_method}`);
   
@@ -126,13 +133,16 @@ export const downloadFile = async (fileId: string): Promise<string> => {
     const downloadResponse = await api.get(`/files/${fileId}/download-info`);
     const downloadInfo = downloadResponse.data;
     
-    // Extract and fix the download URL if needed
+    // Extract the download URL
     let downloadUrl = downloadInfo.download_url;
     
-    // Fix for Docker container name resolution issue - replace storage_service with localhost
-    if (downloadUrl.includes('storage_service:')) {
-      downloadUrl = downloadUrl.replace('storage_service:', 'localhost:');
-      console.log(`Modified download URL to: ${downloadUrl}`);
+    // The backend returns URLs like http://localhost:8001/files/download/...
+    // We need to convert these to relative paths so they go through our Nginx proxy
+    if (downloadUrl.includes('://')) {
+      // Extract just the path part from the full URL
+      const urlObj = new URL(downloadUrl);
+      downloadUrl = urlObj.pathname;
+      console.log(`Converted to relative path: ${downloadUrl}`);
     }
     
     console.log(`Downloading file from: ${downloadUrl}`);
