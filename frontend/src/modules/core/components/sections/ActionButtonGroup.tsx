@@ -8,6 +8,8 @@ interface ActionButtonData {
   description: string;
   icon: React.ReactNode;
   onClick: () => void;
+  badgeLabel?: string;
+  badgeStatus?: 'ready' | 'pending';
 }
 
 interface ActionButtonGroupProps {
@@ -39,6 +41,8 @@ export const ActionButtonGroup: React.FC<ActionButtonGroupProps> = ({
             description={button.description}
             icon={button.icon}
             onClick={button.onClick}
+            badgeLabel={button.badgeLabel}
+            badgeStatus={button.badgeStatus}
           />
         ))}
       </div>

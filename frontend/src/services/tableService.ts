@@ -1,64 +1,82 @@
 import api from './api';
 import { SYSTEM_TABLES } from '../modules/core/constants/databaseTypes';
 
-// Column definition
+// Column definition matching backend API
 export interface Column {
-  column_name: string;
-  data_type: string;
-  is_nullable: string;
-  column_default: string | null;
-  character_maximum_length?: number;
-  numeric_precision?: number;
-  numeric_scale?: number;
-  column_description?: string;
+  name: string;
+  type: string;
+  nullable?: boolean;
+  unique?: boolean;
+  default?: any;
+  primary_key?: boolean;
 }
 
-// Foreign key definition
-export interface ForeignKey {
-  column_name: string;
-  foreign_table_name: string;
-  foreign_column_name: string;
+// Table schema definition
+export interface TableSchema {
+  columns: Column[];
+  indexes?: Array<{
+    name: string;
+    columns: string[];
+    unique?: boolean;
+  }>;
 }
 
-// Index definition
-export interface Index {
-  index_name: string;
-  column_name: string;
-  is_unique: boolean;
-  is_primary: boolean;
-}
-
-// Table type definition
+// Table definition matching backend API
 export interface Table {
   name: string;
   description?: string;
-  column_count: number;
-  size: number;
-  columns?: Column[];
-  primary_keys?: string[];
-  foreign_keys?: ForeignKey[];
-  indexes?: Index[];
+  public?: boolean;
+  owner_id?: string;
+  schema?: TableSchema;
   row_count?: number;
+  created_at?: string;
+  updated_at?: string;
+  metadata?: any;
 }
 
-// Table data response
+// Table data response matching backend API
 export interface TableDataResponse {
   data: any[];
-  total?: number; // Direct total (for backwards compatibility)
-  page?: number;
-  page_size?: number;
-  columns?: {
-    name: string;
-    type: string;
-  }[];
-  metadata?: {
-    total_count?: number;
-    total?: number;
-    page?: number;
-    page_size?: number;
-    total_pages?: number;
-    columns?: any[];
+  metadata: {
+    total_count: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
   };
+}
+
+// Create table request matching backend API
+export interface CreateTableRequest {
+  name: string;
+  description?: string;
+  public?: boolean;
+  schema: TableSchema;
+  metadata?: any;
+}
+
+// Update table request matching backend API
+export interface UpdateTableRequest {
+  new_name?: string;
+  description?: string;
+  public?: boolean;
+}
+
+// Column definition for add/update operations
+export interface ColumnDefinition {
+  name: string;
+  type: string;
+  nullable?: boolean;
+  unique?: boolean;
+  default?: any;
+  primary_key?: boolean;
+}
+
+// Update column request
+export interface UpdateColumnRequest {
+  new_name?: string;
+  type?: string;
+  nullable?: boolean;
+  default?: any;
 }
 
 // Check if a table is a system table
@@ -69,7 +87,7 @@ export const isSystemTable = (tableName: string): boolean => {
 // Get all tables
 export const getUserTables = async (): Promise<Table[]> => {
   const response = await api.get('/tables');
-  // Filter out all system tables including 'users' table
+  // Filter out system tables
   return response.data.filter((table: Table) => !isSystemTable(table.name));
 };
 
@@ -103,7 +121,7 @@ export const getTableData = async (
   };
 
   if (orderBy) params.order_by = orderBy;
-  if (filterColumn && filterValue) {
+  if (filterColumn && filterValue !== null && filterValue !== undefined) {
     params.filter_column = filterColumn;
     params.filter_value = filterValue;
   }
@@ -113,7 +131,7 @@ export const getTableData = async (
 };
 
 // Create a new table
-export const createTable = async (tableData: any) => {
+export const createTable = async (tableData: CreateTableRequest) => {
   const response = await api.post('/tables', tableData);
   return response.data;
 };
@@ -149,13 +167,13 @@ export const deleteTable = async (tableName: string) => {
 };
 
 // Add a column to a table
-export const addColumn = async (tableName: string, columnData: Partial<Column>) => {
+export const addColumn = async (tableName: string, columnData: ColumnDefinition) => {
   const response = await api.post(`/tables/${tableName}/columns`, columnData);
   return response.data;
 };
 
 // Update a column in a table
-export const updateColumn = async (tableName: string, columnName: string, columnData: Partial<Column>) => {
+export const updateColumn = async (tableName: string, columnName: string, columnData: UpdateColumnRequest) => {
   const response = await api.put(`/tables/${tableName}/columns/${columnName}`, columnData);
   return response.data;
 };
@@ -167,33 +185,15 @@ export const deleteColumn = async (tableName: string, columnName: string) => {
 };
 
 // Update table properties (name and description)
-export const updateTable = async (tableName: string, data: { new_name?: string; description?: string }) => {
+export const updateTable = async (tableName: string, data: UpdateTableRequest) => {
   const response = await api.put(`/tables/${tableName}`, data);
   return response.data;
 };   
 
 // Check if a table has foreign key references
-export const hasTableForeignKeyReferences = async (tableName: string): Promise<boolean> => {
-  try {
-    // Get all tables
-    const tables = await getAllTables();
-    
-    for (const table of tables) {
-      if (table.name === tableName) continue;
-      
-      const tableDetails = table.foreign_keys 
-        ? table 
-        : await getTable(table.name);
-      
-      // Check if any foreign key references the target table
-      if (tableDetails.foreign_keys && tableDetails.foreign_keys.some(fk => fk.foreign_table_name === tableName)) {
-        return true;
-      }
-    }
-    
-    return false;
-  } catch (error) {
-    console.error("Error checking for foreign key references:", error);
-    return false;
-  }
+export const hasTableForeignKeyReferences = async (_tableName: string): Promise<boolean> => {
+  // Note: This function may need to be updated based on the new backend API
+  // For now, return false as foreign key checking is not implemented in the current API
+  console.warn('hasTableForeignKeyReferences not implemented for new API');
+  return false;
 }; 

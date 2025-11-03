@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getTableData, getTable, deleteTableData, updateTableData } from '../../../../services/tableService';
+import { getTableData, getTable, deleteTableData, updateTableData, insertTableData } from '../../../../services/tableService';
 import { Loader } from '../ui/Loader';
-import { Trash2, Edit } from 'lucide-react';
+import { Trash2, Edit, PlusCircle } from 'lucide-react';
 import { Button } from '../../../../components/ui/button';
 import { ConfirmationDialog } from '../../../../components/ui/confirmation-dialog';
 import { Table, TableHeader } from '../../../../components/ui/table';
@@ -43,6 +43,12 @@ const TableData = React.forwardRef<{ refreshData: () => Promise<void> }, TableDa
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
+  // New state for add row functionality
+  const [addModal, setAddModal] = useState(false);
+  const [newRowData, setNewRowData] = useState<Record<string, any>>({});
+  const [inserting, setInserting] = useState(false);
+  const [insertError, setInsertError] = useState<string | null>(null);
+
   // Function to fetch table data
   const fetchData = async () => {
     try {
@@ -64,8 +70,8 @@ const TableData = React.forwardRef<{ refreshData: () => Promise<void> }, TableDa
       const newData = Array.isArray(result.data) ? result.data : [];
       setTableData(newData);
 
-      // Handle both direct total and metadata total
-      const totalCount = result.total || result.metadata?.total_count || result.metadata?.total || 0;
+      // Handle total count from metadata
+      const totalCount = result.metadata?.total_count || 0;
       setTotalRows(totalCount);
       setTotalPages(Math.ceil(totalCount / pageSize));
       
@@ -77,28 +83,31 @@ const TableData = React.forwardRef<{ refreshData: () => Promise<void> }, TableDa
         dataLength: newData.length,
         totalRows: totalCount,
         totalPages: Math.ceil(totalCount / pageSize),
-        resultTotal: result.total,
         metadata: result.metadata,
         result: result
       });
       
       // Process table structure to match the expected column format
-      if (tableStructure && tableStructure.columns && tableStructure.columns.length > 0) {
-        const formattedColumns = tableStructure.columns.map((col: any) => ({
-          name: col.column_name,
-          type: col.data_type,
+      if (tableStructure && tableStructure.schema && tableStructure.schema.columns && tableStructure.schema.columns.length > 0) {
+        const formattedColumns = tableStructure.schema.columns.map((col: any) => ({
+          name: col.name,
+          type: col.type,
         }));
         
-        // Override columns with the structure columns even if the data endpoint returned some
+        // Override columns with the structure columns
         setColumns(formattedColumns);
-      } else if (Array.isArray(result.columns)) {
-        // Fallback to data endpoint columns if structure doesn't have any
-        setColumns(result.columns);
       } else {
-        setColumns([]);
-      }
-      
-      setError(null);
+        // If no columns from structure, try to infer from data
+        if (newData.length > 0) {
+          const inferredColumns = Object.keys(newData[0]).map(key => ({
+            name: key,
+            type: 'TEXT', // Default type
+          }));
+          setColumns(inferredColumns);
+        } else {
+          setColumns([]);
+        }
+      }      setError(null);
     } catch (err: any) {
       console.error('Error fetching table data:', err);
       setError(String(err.response?.data?.detail || err.message || 'Failed to load table data'));
@@ -331,6 +340,83 @@ const TableData = React.forwardRef<{ refreshData: () => Promise<void> }, TableDa
     }));
   };
 
+  // New function to handle add row button click
+  const handleAddRowClick = () => {
+    setAddModal(true);
+    setNewRowData({});
+    setInsertError(null);
+  };
+
+  // New function to handle add row confirmation
+  const handleAddRowConfirm = async () => {
+    setInserting(true);
+    setInsertError(null);
+    
+    try {
+      // Determine the primary key column
+      const primaryKey = columns.find(col => 
+        col.name === 'id' || col.name.endsWith('_id')
+      )?.name || 'id';
+      
+      // Define system fields that shouldn't be inserted manually
+      const systemFields = [
+        'created_at',
+        'updated_at',
+        'date_created',
+        'date_updated',
+        'timestamp',
+        'modified_at',
+        'inserted_at'
+      ];
+      
+      // Check if primary key is UUID type - if so, don't include it in insert
+      const pkColumn = columns.find(col => col.name === primaryKey);
+      const isUuidPrimaryKey = pkColumn?.type?.toLowerCase() === 'uuid';
+      
+      if (isUuidPrimaryKey) {
+        systemFields.push(primaryKey);
+      }
+      
+      // Filter out system fields from the insert data
+      const insertData = Object.keys(newRowData).reduce((acc, key) => {
+        if (!systemFields.includes(key) && newRowData[key] !== '') {
+          acc[key] = newRowData[key];
+        }
+        return acc;
+      }, {} as Record<string, any>);
+      
+      // Use the insertTableData function
+      await insertTableData(tableName, insertData);
+      
+      // Refresh the table data to show the new row
+      await fetchData();
+      
+      // Close the dialog
+      setAddModal(false);
+      setNewRowData({});
+    } catch (err: any) {
+      console.error('Error inserting row:', err);
+      setInsertError(err?.response?.data?.detail || err?.message || 'Failed to insert row');
+    } finally {
+      setInserting(false);
+    }
+  };
+
+  // New function to handle add row cancellation
+  const handleAddRowCancel = () => {
+    setAddModal(false);
+    setNewRowData({});
+    setInsertError(null);
+  };
+
+  // Handle input changes in add row modal
+  const handleAddRowInputChange = (columnName: string, value: any) => {
+    setNewRowData(prev => ({
+      ...prev,
+      [columnName]: value
+    }));
+  };
+
   // Add renderActions function for the Table component
   const renderActions = (row: any) => {
     const originalIndex = row['__originalIndex'] as number;
@@ -381,6 +467,18 @@ const TableData = React.forwardRef<{ refreshData: () => Promise<void> }, TableDa
 
   return (
     <div>
+      {/* Add Row Button */}
+      <div className="mb-4 flex justify-end">
+        <Button
+          onClick={handleAddRowClick}
+          size="sm"
+          className="flex items-center gap-2"
+        >
+          <PlusCircle className="w-4 h-4" />
+          Add Row
+        </Button>
+      </div>
+
       {/* Use the reusable Table component */} 
       <Table<Record<string, React.ReactNode>>
         headers={tableHeaders}
@@ -496,6 +594,87 @@ const TableData = React.forwardRef<{ refreshData: () => Promise<void> }, TableDa
                   className="bg-primary-600 hover:bg-primary-700"
                 >
                   {updating ? "Updating..." : "Update"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Row Modal */}
+      {addModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-secondary-800 dark:text-white mb-4">
+                Add New Row
+              </h3>
+              
+              {insertError && (
+                <div className="text-error-600 dark:text-error-400 bg-error-50 dark:bg-error-900/30 p-4 rounded mb-4 text-sm">
+                  {insertError}
+                </div>
+              )}
+              
+              <div className="space-y-4">
+                {columns.map(column => {
+                  // Define system fields that shouldn't be manually entered
+                  const systemFields = [
+                    'created_at',
+                    'updated_at',
+                    'date_created',
+                    'date_updated',
+                    'timestamp',
+                    'modified_at',
+                    'inserted_at'
+                  ];
+                  
+                  // Determine the primary key column
+                  const primaryKey = columns.find(col => 
+                    col.name === 'id' || col.name.endsWith('_id')
+                  )?.name || 'id';
+                  
+                  // Check if this column is a UUID primary key (auto-generated)
+                  const isUuidPrimaryKey = column.name === primaryKey && column.type?.toLowerCase() === 'uuid';
+                  
+                  // Skip system fields and UUID primary keys
+                  const isSystemField = systemFields.includes(column.name) || isUuidPrimaryKey;
+                  if (isSystemField) return null;
+                  
+                  return (
+                    <div key={column.name}>
+                      <label className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
+                        {column.name}
+                        <span className="ml-1 text-xs text-secondary-500">({column.type})</span>
+                        {!column.nullable && <span className="ml-1 text-error-600">*</span>}
+                      </label>
+                      <Input
+                        type="text"
+                        value={newRowData[column.name] || ''}
+                        onChange={(e) => handleAddRowInputChange(column.name, e.target.value)}
+                        placeholder={`Enter ${column.name}`}
+                        className="w-full"
+                        required={!column.nullable}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              
+              <div className="flex justify-end space-x-3 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={handleAddRowCancel}
+                  disabled={inserting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddRowConfirm}
+                  disabled={inserting}
+                  className="bg-primary-600 hover:bg-primary-700"
+                >
+                  {inserting ? "Adding..." : "Add Row"}
                 </Button>
               </div>
             </div>

@@ -31,8 +31,8 @@ const Tables: React.FC = () => {
   useEffect(() => {
     fetchTables();
     
-    // Use correct channel name with _changes suffix
-    const subscriptionId = 'tables_changes';
+    // Use Phoenix channel name from database triggers
+    const subscriptionId = 'tables_events';
     realtimeService.subscribe(subscriptionId);
 
     const handleTableUpdate = (data: any) => {

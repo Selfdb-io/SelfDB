@@ -9,6 +9,9 @@ export const Header: React.FC = () => {
   const { isAuthenticated, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+
+  const versionLabel = (import.meta.env.VITE_APP_VERSION as string | undefined)?.trim();
+  const productName = 'SelfDB';
   
   const handleLogout = () => {
     logout();
@@ -20,7 +23,14 @@ export const Header: React.FC = () => {
       <div className="flex justify-between items-center h-16">
         <Link to="/" className="flex items-center h-full pl-4">
           <img src="/logo.svg" alt="SelfDB Logo" className="h-8 w-auto dark:brightness-0 dark:invert" />
-          <span className="ml-2 text-xl font-heading font-bold text-secondary-900 dark:text-white">SelfDB</span>
+          <span className="ml-2 text-xl font-heading font-bold text-secondary-900 dark:text-white">
+            {productName}
+          </span>
+          {versionLabel && (
+            <span className="ml-2 text-sm text-secondary-500 dark:text-secondary-400">
+              {versionLabel}
+            </span>
+          )}
         </Link>
         
         <div className="flex items-center mr-4 space-x-4">

@@ -4,46 +4,9 @@ import { Input } from '../../../../components/ui/input';
 import { Textarea } from '../../../../components/ui/textarea';
 import { Button } from '../../../../components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../../../components/ui/dialog';
-import { Label } from '../../../../components/ui/label';
-import { updateFunction, Function, getFunction } from '../../../../services/functionService';
+import { updateFunction, setEnvVars } from '../../../../services/functionService';
 
-// Toggle component for On/Off setting
-const Toggle: React.FC<{
-  isChecked: boolean;
-  onChange: (checked: boolean) => void;
-  label: string;
-  id: string;
-}> = ({ isChecked, onChange, label, id }) => {
-  return (
-    <div className="flex items-center space-x-3">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={isChecked}
-        id={id}
-        onClick={() => onChange(!isChecked)}
-        className={`
-          relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
-          transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
-          ${isChecked ? 'bg-green-600' : 'bg-secondary-200 dark:bg-secondary-700'}
-        `}
-      >
-        <span className="sr-only">{label}</span>
-        <span
-          aria-hidden="true"
-          className={`
-            pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow 
-            ring-0 transition duration-200 ease-in-out
-            ${isChecked ? 'translate-x-5' : 'translate-x-0'}
-          `}
-        />
-      </button>
-      <Label htmlFor={id} className="text-sm text-secondary-700 dark:text-secondary-300 cursor-pointer">
-        {label}
-      </Label>
-    </div>
-  );
-};
+// Status toggle removed (no backend support)
 
 interface FunctionInfoModalProps {
   isOpen: boolean;
@@ -52,6 +15,7 @@ interface FunctionInfoModalProps {
   functionName: string;
   functionDescription?: string;
   functionStatus?: string;
+  envVars?: Record<string, string>;
   onUpdate?: () => void;
 }
 
@@ -62,63 +26,41 @@ const FunctionInfoModal: React.FC<FunctionInfoModalProps> = ({
   functionName,
   functionDescription = '',
   functionStatus,
+  envVars = {},
   onUpdate,
 }) => {
   const [functionData, setFunctionData] = useState({
     name: functionName,
     description: functionDescription,
-    status: functionStatus || 'draft',
-    isActive: functionStatus === 'active'
   });
+  const [envVarsState, setEnvVarsState] = useState<Record<string, string>>({});
+  const [envVarsChanged, setEnvVarsChanged] = useState(false);
   
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
 
-  // If functionStatus is undefined, fetch the function to get is_active
+  // No status handling needed
   useEffect(() => {
-    if (isOpen && functionId && functionStatus === undefined) {
-      setInitialLoading(true);
-      
-      getFunction(functionId)
-        .then(data => {
-          // Convert is_active to status
-          const derivedStatus = data.is_active ? 'active' : 'draft';
-          
-          setFunctionData(prev => ({
-            ...prev,
-            status: derivedStatus,
-            isActive: Boolean(data.is_active)
-          }));
-          
-          setInitialLoading(false);
-        })
-        .catch(err => {
-          console.error('Error fetching function in modal:', err);
-          setInitialLoading(false);
-        });
-    }
-  }, [functionId, functionStatus, isOpen]);
+    setInitialLoading(false);
+  }, [isOpen]);
 
   // Update state when props change
   useEffect(() => {
-    if (functionStatus !== undefined) {
-      setFunctionData({
-        name: functionName,
-        description: functionDescription || '',
-        status: functionStatus || 'draft',
-        isActive: functionStatus === 'active'
+    setFunctionData({
+      name: functionName,
+      description: functionDescription || '',
+    });
+    // Initialize env vars state with values from the envVars object
+    const initialEnvVars: Record<string, string> = {};
+    if (envVars && typeof envVars === 'object' && !Array.isArray(envVars)) {
+      Object.keys(envVars).forEach(envVarName => {
+        initialEnvVars[envVarName] = envVars[envVarName] || '';
       });
-    } else {
-      // Don't update status if it's undefined - keep the derived one
-      setFunctionData(prev => ({
-        name: functionName,
-        description: functionDescription || '',
-        status: prev.status,
-        isActive: prev.isActive
-      }));
     }
-  }, [functionName, functionDescription, functionStatus, isOpen]);
+    setEnvVarsState(initialEnvVars);
+    setEnvVarsChanged(false);
+  }, [functionName, functionDescription, functionStatus, envVars, isOpen]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -129,13 +71,7 @@ const FunctionInfoModal: React.FC<FunctionInfoModalProps> = ({
     });
   };
 
-  const handleStatusChange = (isActive: boolean) => {
-    setFunctionData({
-      ...functionData,
-      isActive,
-      status: isActive ? 'active' : 'draft'
-    });
-  };
+  // Removed status toggle
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,16 +86,18 @@ const FunctionInfoModal: React.FC<FunctionInfoModalProps> = ({
     setError(null);
     
     try {
-      // The backend expects is_active as a boolean, but our frontend API uses status as a string
-      // Create a properly typed payload to satisfy TypeScript
-      const updatePayload: Partial<Function> = {
+      // Update function info
+      const updatePayload: Partial<{ name: string; description: string }> = {
         name: functionData.name,
         description: functionData.description,
-        status: functionData.status,
-        is_active: functionData.isActive 
       };
       
       await updateFunction(functionId, updatePayload);
+      
+      // Update env vars if they changed
+      if (envVarsChanged) {
+        await setEnvVars(functionId, envVarsState);
+      }
       
       onClose();
       if (onUpdate) {
@@ -175,11 +113,11 @@ const FunctionInfoModal: React.FC<FunctionInfoModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">Edit Function Information</DialogTitle>
           <DialogDescription>
-            Update the function's name, description, and status.
+            Update the function's name and description.
           </DialogDescription>
         </DialogHeader>
         
@@ -219,15 +157,69 @@ const FunctionInfoModal: React.FC<FunctionInfoModalProps> = ({
               />
             </div>
             
-            <div className="mt-4">
-              <Toggle
-                id="function-status"
-                isChecked={functionData.isActive}
-                onChange={handleStatusChange}
-                label="Function Status (On/Off)"
-              />
+            <div>
+              <label className="block text-sm font-medium mb-2">Environment Variables</label>
+              <div className="space-y-2">
+                {Object.entries(envVarsState).map(([key, value], index) => (
+                  <div key={index} className="flex gap-2 items-center">
+                    <Input
+                      placeholder="Name"
+                      value={key}
+                      onChange={(e) => {
+                        const newKey = e.target.value;
+                        const newEnvVars = { ...envVarsState };
+                        delete newEnvVars[key];
+                        if (newKey) {
+                          newEnvVars[newKey] = value;
+                        }
+                        setEnvVarsState(newEnvVars);
+                        setEnvVarsChanged(true);
+                      }}
+                      className="flex-1"
+                    />
+                    <Input
+                      type="password"
+                      placeholder="Variable value"
+                      value={value}
+                      onChange={(e) => {
+                        const newValue = e.target.value;
+                        setEnvVarsState({ ...envVarsState, [key]: newValue });
+                        setEnvVarsChanged(true);
+                      }}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const newEnvVars = { ...envVarsState };
+                        delete newEnvVars[key];
+                        setEnvVarsState(newEnvVars);
+                        setEnvVarsChanged(true);
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const newEnvVars = { ...envVarsState };
+                    const newKey = '';
+                    newEnvVars[newKey] = '';
+                    setEnvVarsState(newEnvVars);
+                    setEnvVarsChanged(true);
+                  }}
+                >
+                  Add Environment Variable
+                </Button>
+              </div>
               <p className="text-xs text-secondary-500 dark:text-secondary-400 mt-1">
-                Turn functions On to make them available for use, or Off to disable them.
+                Environment variables are securely stored. Existing values are hidden for security.
               </p>
             </div>
             

@@ -58,30 +58,21 @@ const SchemaVisualizationFlow: React.FC<SchemaVisualizationProps> = ({ data, onR
     }
   }, []);
 
-  // Transform API data to React Flow format
+  // Transform API data to React Flow nodes with positions
   useEffect(() => {
     if (!data || !data.nodes || !data.edges) return;
 
-    // Filter tables based on isSystemTable function
-    const filteredNodes = data.nodes.filter((node) => {
-      return !isSystemTable(node.id);
-    });
+    const filteredNodes = data.nodes.filter((node) => !isSystemTable(node.id));
 
-    // Process foreign key relationships
+    // Process foreign key relationships for highlighting
     const foreignKeyMap: Record<string, string[]> = {};
     data.edges.forEach((edge) => {
-      if (!foreignKeyMap[edge.source]) {
-        foreignKeyMap[edge.source] = [];
-      }
+      if (!foreignKeyMap[edge.source]) foreignKeyMap[edge.source] = [];
       foreignKeyMap[edge.source].push(edge.source_column);
     });
 
-    // Create nodes with positions
     const flowNodes: Node[] = filteredNodes.map((node, index) => {
-      // Check if we have saved positions for this node
       const savedPosition = savedLayout && savedLayout[node.id];
-
-      // Use saved position or default grid layout
       const position = savedPosition || {
         x: 100 + (index % 3) * 300,
         y: 100 + Math.floor(index / 3) * 400,
@@ -107,34 +98,42 @@ const SchemaVisualizationFlow: React.FC<SchemaVisualizationProps> = ({ data, onR
       };
     });
 
-    // Create edges - only include edges where both source and target are in our filtered nodes
-    const filteredNodeIds = filteredNodes.map((node) => node.id);
+    setNodes(flowNodes);
+  }, [data, savedLayout, setNodes]);
+
+  // Build edges with dynamic handle side selection based on current node positions
+  useEffect(() => {
+    if (!data || !data.edges || nodes.length === 0) return;
+
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    const nodeMap = new Map(nodes.map((n) => [n.id, n] as const));
+
     const flowEdges: Edge[] = data.edges
-      .filter(
-        (edge) => filteredNodeIds.includes(edge.source) && filteredNodeIds.includes(edge.target)
-      )
-      .map((edge) => {
+      .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+      .map((edge, idx) => {
+        const src = nodeMap.get(edge.source)!;
+        const tgt = nodeMap.get(edge.target)!;
+        const srcToRight = (src.position?.x ?? 0) <= (tgt.position?.x ?? 0);
+        const sourceHandle = `${edge.source_column}_${srcToRight ? 'R' : 'L'}`;
+        const targetHandle = `${edge.target_column}_${srcToRight ? 'L' : 'R'}`;
+
         return {
-          id: edge.id,
+          id: edge.id || `${edge.source}.${edge.source_column}->${edge.target}.${edge.target_column}-${idx}`,
           source: edge.source,
           target: edge.target,
-          sourceHandle: edge.source_column, // Connect from the source column
-          targetHandle: edge.target_column, // Connect to the target column
+          sourceHandle,
+          targetHandle,
           type: 'default',
           animated: true,
           style: { stroke: 'rgb(20, 184, 166)', strokeWidth: 2 },
           label: '',
           labelStyle: { display: 'none' },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: 'rgb(20, 184, 166)',
-          },
+          markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(20, 184, 166)' },
         };
       });
 
-    setNodes(flowNodes);
     setEdges(flowEdges);
-  }, [data, savedLayout, setNodes, setEdges]);
+  }, [data, nodes, setEdges]);
 
   // Save node positions to localStorage
   const saveLayout = useCallback(() => {

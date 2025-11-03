@@ -1,0 +1,279 @@
+# SelfDB Docker Compose Template
+# This template uses environment variables for all port configurations
+# Copy and customize for your deployment needs
+# 
+# COMPOSE_PROJECT_NAME can be set to run multiple instances:
+# - selfdb_dev (development)
+# - selfdb_staging (staging)
+# - selfdb_prod (production)
+
+
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Admin setup for initial deployment
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME}
+      ADMIN_LAST_NAME: ${ADMIN_LAST_NAME}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:${INTERNAL_POSTGRES_PORT}"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./database/init:/docker-entrypoint-initdb.d
+      - ./shared:/shared
+    command: postgres
+    networks:
+      - selfdb_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PgBouncer Connection Pooler
+  pgbouncer:
+    build:
+      context: ./pgbouncer
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASES_HOST: postgres
+      DATABASES_PORT: ${INTERNAL_POSTGRES_PORT}
+      DATABASES_USER: ${POSTGRES_USER}
+      DATABASES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASES_DBNAME: ${POSTGRES_DB}
+      LISTEN_ADDR: 0.0.0.0
+      LISTEN_PORT: ${INTERNAL_PGBOUNCER_PORT}
+      AUTH_TYPE: trust
+      POOL_MODE: ${PGBOUNCER_POOL_MODE:-session}
+      MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN}
+      DEFAULT_POOL_SIZE: ${PGBOUNCER_DEFAULT_POOL_SIZE}
+      RESERVE_POOL_SIZE: ${PGBOUNCER_RESERVE_POOL_SIZE}
+      SERVER_LIFETIME: ${PGBOUNCER_SERVER_LIFETIME}
+      SERVER_IDLE_TIMEOUT: ${PGBOUNCER_SERVER_IDLE_TIMEOUT}
+      QUERY_WAIT_TIMEOUT: ${PGBOUNCER_QUERY_WAIT_TIMEOUT}
+      CLIENT_IDLE_TIMEOUT: ${PGBOUNCER_CLIENT_IDLE_TIMEOUT}
+      ADMIN_USERS: ${POSTGRES_USER}
+      STATS_USERS: ${POSTGRES_USER}
+    ports:
+      - "${PGBOUNCER_PORT}:${INTERNAL_PGBOUNCER_PORT}"
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ln | grep -q ':${INTERNAL_PGBOUNCER_PORT}' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - selfdb_network
+
+  # Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:${INTERNAL_PGBOUNCER_PORT}/${POSTGRES_DB}
+      - API_PORT=${API_PORT}
+      - ENV=${ENV}
+      - DOCKER_ENV=true
+      - DEBUG=${DEBUG}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - JWT_EXPIRATION_HOURS=${JWT_EXPIRATION_HOURS}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_FIRST_NAME=${ADMIN_FIRST_NAME}
+      - ADMIN_LAST_NAME=${ADMIN_LAST_NAME}
+      - API_KEY=${API_KEY}
+      - ALLOWED_CORS=${ALLOWED_CORS}
+      - POSTGRES_HOST=pgbouncer
+      - POSTGRES_PORT=${INTERNAL_PGBOUNCER_PORT}
+      - PGBOUNCER_PORT=${PGBOUNCER_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - STORAGE_PORT=${STORAGE_PORT}
+      - DENO_PORT=${DENO_PORT}
+      - DENO_HOST=deno-runtime
+      - FRONTEND_PORT=${FRONTEND_PORT}
+      - PHOENIX_ENABLED=${PHOENIX_ENABLED:-false}
+      - REALTIME_INTERNAL_URL=http://realtime:4000
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - SELFDB_VERSION=${SELFDB_VERSION}
+    ports:
+      - "${API_PORT}:${API_PORT}"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      realtime:
+        condition: service_healthy
+    networks:
+      - selfdb_network
+    restart: unless-stopped
+    volumes:
+      - ./backend:/app
+      - ./shared:/app/shared  # Shared code between all services
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${API_PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Storage Service
+  storage:
+    build:
+      context: ./storage
+      dockerfile: Dockerfile
+    environment:
+      - STORAGE_PORT=${STORAGE_PORT}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:${INTERNAL_PGBOUNCER_PORT}/${POSTGRES_DB}
+      - ENV=${ENV}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - API_KEY=${API_KEY}
+      - SELFDB_VERSION=${SELFDB_VERSION}
+      - POSTGRES_HOST=pgbouncer
+      - POSTGRES_PORT=${INTERNAL_PGBOUNCER_PORT}
+      - PGBOUNCER_PORT=${PGBOUNCER_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    networks:
+      - selfdb_network
+    restart: unless-stopped
+    volumes:
+      - ./storage:/app
+      - ./shared:/app/shared
+      - storage_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${STORAGE_PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Deno Runtime Service (Functions)
+  deno-runtime:
+    image: denoland/deno:2.2.11
+    container_name: ${COMPOSE_PROJECT_NAME:-selfdb}_deno
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:${INTERNAL_PGBOUNCER_PORT}/${POSTGRES_DB}
+      - FUNCTION_TIMEOUT=30000
+      - LOG_LEVEL=info
+      - DENO_PORT=${DENO_PORT}
+      - ENV=${ENV}
+      - API_KEY=${API_KEY}
+      - POSTGRES_HOST=pgbouncer
+      - POSTGRES_PORT=${INTERNAL_PGBOUNCER_PORT}
+      - PGBOUNCER_PORT=${PGBOUNCER_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      # Mount the functions_data volume to /functions
+      - functions_data:/functions
+      # Mount the local server.ts to a temporary location for preloading
+      - ./functions/server.ts:/app/server.ts.original
+    working_dir: /functions
+    # Command to preload server.ts if not present, then run it
+    command: >
+      sh -c "
+        if [ ! -f /functions/server.ts ]; then
+          echo 'Preloading server.ts into volume...';
+          cp /app/server.ts.original /functions/server.ts;
+        fi &&
+        deno run --allow-net --allow-read --allow-env --allow-write /functions/server.ts
+      "
+    ports:
+      - "${DENO_PORT}:${DENO_PORT}"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - selfdb_network
+
+  # Phoenix Realtime Service (Internal Only)
+  realtime:
+    build:
+      context: ./realtime
+      dockerfile: Dockerfile
+    environment:
+      - PORT=4000
+      - SECRET_KEY_BASE=${PHOENIX_SECRET_KEY_BASE}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - MIX_ENV=prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - selfdb_network
+    restart: unless-stopped
+    # NO external ports - internal service only
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        APP_VERSION: ${SELFDB_VERSION}
+    environment:
+      - ENV=${ENV}
+      - API_PORT=${API_PORT}
+      - STORAGE_PORT=${STORAGE_PORT}
+      - DENO_PORT=${DENO_PORT}
+      - API_KEY=${API_KEY}
+      - ALLOWED_CORS=${ALLOWED_CORS}
+      - SELFDB_VERSION=${SELFDB_VERSION}
+    ports:
+      - "${FRONTEND_PORT}:80"
+    depends_on:
+      - backend
+      - storage
+      - deno-runtime
+    networks:
+      - selfdb_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/frontend/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  storage_data:
+    driver: local
+  functions_data:
+    driver: local
+  backup_data:
+    driver: local
+  pgbouncer_logs:
+    driver: local
+
+networks:
+  selfdb_network:
+    driver: bridge
+    name: ${DOCKER_NETWORK:-selfdb_network}

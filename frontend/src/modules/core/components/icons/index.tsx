@@ -6,5 +6,6 @@ export {
   ClockIcon,
   StorageIcon,
   UserIcon,
-  DatabaseIcon
+  DatabaseIcon,
+  WebhookIcon
 } from './IconProvider'; 

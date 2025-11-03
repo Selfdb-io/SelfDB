@@ -51,20 +51,33 @@ const TableNode: React.FC<TableNodeProps> = ({ data }) => {
                 {column.data_type}
               </div>
 
-              {/* Add connection points for foreign keys and primary keys */}
-              <Handle
-                type={isForeignKey ? "source" : "target"}
-                position={isForeignKey ? Position.Right : Position.Left}
-                id={column.column_name}
-                style={{
-                  background: isForeignKey ? 'rgb(20, 184, 166)' : 'rgb(37, 99, 235)',
-                  width: 8,
-                  height: 8,
-                  visibility: isPrimaryKey || isForeignKey ? 'visible' : 'hidden',
-                  opacity: isPrimaryKey || isForeignKey ? 1 : 0
-                }}
-                isConnectable={isPrimaryKey || isForeignKey}
-              />
+              {/* Add connection points (both sides) for foreign keys and primary keys */}
+              {(isPrimaryKey || isForeignKey) && (
+                <>
+                  <Handle
+                    type={isForeignKey ? "source" : "target"}
+                    position={Position.Left}
+                    id={`${column.column_name}_L`}
+                    style={{
+                      background: isForeignKey ? 'rgb(20, 184, 166)' : 'rgb(37, 99, 235)',
+                      width: 8,
+                      height: 8,
+                    }}
+                    isConnectable
+                  />
+                  <Handle
+                    type={isForeignKey ? "source" : "target"}
+                    position={Position.Right}
+                    id={`${column.column_name}_R`}
+                    style={{
+                      background: isForeignKey ? 'rgb(20, 184, 166)' : 'rgb(37, 99, 235)',
+                      width: 8,
+                      height: 8,
+                    }}
+                    isConnectable
+                  />
+                </>
+              )}
             </div>
           );
         })}

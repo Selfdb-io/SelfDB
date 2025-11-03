@@ -3,22 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import { PlusCircle } from 'lucide-react';
 import { FunctionList, FunctionForm } from '../functions';
 import { Button } from '../../../../components/ui/button';
-import { getFunctions, Function } from '../../../../services/functionService';
+import { getFunctions, SelfFunction } from '../../../../services/functionService';
 import realtimeService from '../../../../services/realtimeService';
 
 const Functions: React.FC = () => {
-  const [functions, setFunctions] = useState<Function[]>([]);
+  const [functions, setFunctions] = useState<SelfFunction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formModalOpen, setFormModalOpen] = useState(false);
-  const [editFunction, setEditFunction] = useState<Function | null>(null);
+  const [editFunction, setEditFunction] = useState<SelfFunction | null>(null);
   const navigate = useNavigate();
 
   const fetchFunctions = async () => {
     try {
       setLoading(true);
       const data = await getFunctions();
-      setFunctions(data);
+      setFunctions(data.functions);
       setError(null);
     } catch (err: any) {
       console.error('Error fetching functions:', err);
@@ -41,21 +41,9 @@ const Functions: React.FC = () => {
     
     const removeListener = realtimeService.addListener(subscriptionId, handleFunctionUpdate);
     
-    const envVarsSubscriptionId = 'function_env_vars';
-    realtimeService.subscribe(envVarsSubscriptionId);
-    
-    const handleEnvVarUpdate = (data: any) => {
-      console.log('Received function env var update via WebSocket:', data);
-      fetchFunctions(); // Refetch functions when an env var update is received
-    };
-    
-    const removeEnvVarListener = realtimeService.addListener(envVarsSubscriptionId, handleEnvVarUpdate);
-    
     return () => {
       removeListener();
       realtimeService.unsubscribe(subscriptionId);
-      removeEnvVarListener();
-      realtimeService.unsubscribe(envVarsSubscriptionId);
     };
   }, []);
 
@@ -73,12 +61,12 @@ const Functions: React.FC = () => {
     setEditFunction(null);
   };
 
-  const handleEditFunction = (func: Function) => {
+  const handleEditFunction = (func: SelfFunction) => {
     setEditFunction(func);
     setFormModalOpen(true);
   };
 
-  const handleFunctionSuccess = (func: Function) => {
+  const handleFunctionSuccess = (func: SelfFunction) => {
     if (editFunction) {
       setFunctions(prevFunctions => 
         prevFunctions.map(f => f.id === func.id ? func : f)

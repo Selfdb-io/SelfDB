@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Bucket, getBucket, getBucketFiles, deleteBucket, updateBucket } from '../../../../services/bucketService';
+import { Bucket, getBucket, getBucketFiles, deleteBucketAndContents, updateBucket } from '../../../../services/bucketService'; // Updated import
 import realtimeService from '../../../../services/realtimeService';
-import { FileItem } from '../../../../services/fileService';
+import { FileItem, uploadFile } from '../../../../services/fileService';
 import { Button } from '../../../../components/ui/button';
 import { ConfirmationDialog } from '../../../../components/ui/confirmation-dialog';
-import { FileUploader, FileList, BucketFormModal, BucketInfoDisplay } from '.';
+import { FileList, BucketFormModal, BucketInfoDisplay } from '.';
 import { ArrowLeft, ChevronRight, Upload, Trash2, Pencil } from 'lucide-react';
 
 const BucketDetail: React.FC = () => {
@@ -15,7 +15,9 @@ const BucketDetail: React.FC = () => {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showUploader, setShowUploader] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -32,8 +34,8 @@ const BucketDetail: React.FC = () => {
       fetchBucketDetails(bucketId);
       
       // Subscribe to real-time updates for both bucket changes and file changes
-      const bucketSubscriptionId = 'buckets_changes';
-      const filesSubscriptionId = 'files_changes';
+      const bucketSubscriptionId = 'buckets_events';
+      const filesSubscriptionId = 'files_events';
       
       realtimeService.subscribe(bucketSubscriptionId);
       realtimeService.subscribe(filesSubscriptionId);
@@ -77,7 +79,6 @@ const BucketDetail: React.FC = () => {
       setLoading(true);
       // Fetch bucket details
       const bucketData = await getBucket(id);
-      setBucket(bucketData);
       
       // Fetch files in this bucket with pagination
       const skip = (currentPage - 1) * pageSize;
@@ -90,13 +91,29 @@ const BucketDetail: React.FC = () => {
       }));
       setFiles(fileItems);
       
-      // Set total files and pages based on bucket file count
-      setTotalFiles(bucketData.file_count);
-      setTotalPages(Math.ceil(bucketData.file_count / pageSize));
+      // Compute counts and total size from files
+      const computedFileCount = fileItems.length;
+      const computedTotalSize = fileItems.reduce((sum, f) => sum + (f.size || 0), 0);
+      
+      // Update bucket with computed metrics
+      setBucket({
+        ...bucketData,
+        file_count: computedFileCount,
+        total_size: computedTotalSize,
+      });
+      
+      // Set total files and pages based on computed file count
+      setTotalFiles(computedFileCount);
+      setTotalPages(Math.ceil(computedFileCount / pageSize));
       
       setError(null);
     } catch (err: any) {
       console.error('Error fetching bucket details:', err);
+      const status = err?.response?.status;
+      if (status === 404) {
+        navigate('/storage');
+        return;
+      }
       setError('Failed to load bucket details. Please try again later.');
     } finally {
       setLoading(false);
@@ -115,11 +132,11 @@ const BucketDetail: React.FC = () => {
     setDeleteError(null);
     
     try {
-      await deleteBucket(bucketId);
+      await deleteBucketAndContents(bucketId); // Updated function call
       // Navigate back to storage page
       navigate('/storage');
     } catch (err: any) {
-      setDeleteError(err.response?.data?.detail || 'Failed to delete bucket');
+      setDeleteError(err.response?.data?.detail || 'Failed to delete bucket and its contents'); // Updated error message
       setDeleting(false);
     }
   };
@@ -129,15 +146,34 @@ const BucketDetail: React.FC = () => {
     setDeleteError(null);
   };
 
-  const handleUploadComplete = (_newFile: FileItem) => {
+  const handleUploadComplete = (_newFile: any) => {
     // Reset to first page to see the new file
     setCurrentPage(1);
     // Refresh bucket data to get updated counts and files
     if (bucketId) {
       fetchBucketDetails(bucketId);
     }
-    // Hide the uploader
-    setShowUploader(false);
+  };
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!bucketId) return;
+    const selectedFiles = e.target.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
+    try {
+      setUploading(true);
+      setUploadError(null);
+      for (const file of Array.from(selectedFiles)) {
+        await uploadFile(file, bucketId);
+      }
+      handleUploadComplete(null);
+    } catch (err: any) {
+      console.error('Upload failed:', err);
+      setUploadError(err?.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+      // Reset the input so the same file can be selected again
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleFileDeleted = async (_fileId: string) => {
@@ -270,27 +306,37 @@ const BucketDetail: React.FC = () => {
         createdAt={new Date(bucket.created_at).toLocaleDateString()}
       />
       
-      {/* Upload Button */}
+      {/* Upload Button + Hidden Input */}
       <div className="flex justify-end">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleFileInputChange}
+        />
         <Button 
-          onClick={() => setShowUploader(!showUploader)}
+          onClick={() => fileInputRef.current?.click()}
           className="flex items-center"
+          disabled={uploading}
         >
-          <Upload className="w-4 h-4 mr-2" />
-          {showUploader ? 'Hide Upload Form' : 'Upload File to Bucket'}
+          {uploading ? (
+            <span className="mr-2 animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+          ) : (
+            <Upload className="w-4 h-4 mr-2" />
+          )}
+          {uploading ? 'Uploading...' : 'Upload File to Bucket'}
         </Button>
       </div>
-      
-      {/* File Uploader */}
-      {showUploader && (
-        <FileUploader 
-          onUploadComplete={handleUploadComplete} 
-          bucketId={bucketId}
-        />
+      {uploadError && (
+        <div className="mt-2 text-error-600 dark:text-error-400 bg-error-50 dark:bg-error-900/30 p-2 rounded text-sm">
+          {uploadError}
+        </div>
       )}
       
       {/* File List */}
       <FileList 
+        bucketId={bucketId}
         files={files} 
         onFileDeleted={handleFileDeleted} 
         loading={loading} 
@@ -300,6 +346,7 @@ const BucketDetail: React.FC = () => {
         totalFiles={totalFiles}
         totalPages={totalPages}
         onPageChange={handlePageChange}
+        onUploadComplete={handleUploadComplete}
       />
 
       {/* Delete Confirmation Dialog */}
@@ -341,4 +388,4 @@ const BucketDetail: React.FC = () => {
   );
 };
 
-export default BucketDetail; 
+export default BucketDetail;

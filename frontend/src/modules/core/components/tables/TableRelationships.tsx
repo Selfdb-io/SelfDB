@@ -1,9 +1,14 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaArrowRight } from "react-icons/fa6";
-import { ForeignKey } from '../../../../services/tableService';
 import { Button } from '../../../../components/ui/button';
 import { Table, TableHeader } from '../../../../components/ui/table';
+
+interface ForeignKey {
+  column_name: string;
+  foreign_table_name: string;
+  foreign_column_name: string;
+}
 
 interface TableRelationshipsProps {
   tableName: string;

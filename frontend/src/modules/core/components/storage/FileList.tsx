@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { ConfirmationDialog } from '../../../../components/ui/confirmation-dialog';
-import { FileItem, deleteFile, downloadFile } from '../../../../services/fileService';
+import { FileItem, deleteFile, downloadFile, uploadFile } from '../../../../services/fileService';
 import { Download, Trash2, FileText, AlertCircle } from 'lucide-react';
 import { Table, TableHeader } from '../../../../components/ui/table';
 import { Pagination } from '../../../../components/ui/pagination';
+import { useDropzone } from 'react-dropzone';
 
 interface FileListProps {
+  bucketId: string;
   files: FileItem[];
   onFileDeleted: (fileId: string) => void;
   loading: boolean;
@@ -16,6 +18,7 @@ interface FileListProps {
   totalFiles?: number;
   totalPages?: number;
   onPageChange?: (page: number) => void;
+  onUploadComplete?: (file: any) => void;
 }
 
 // Create an interface for the formatted file data
@@ -26,21 +29,57 @@ interface FormattedFileData extends Omit<FileItem, 'size' | 'created_at'> {
   rowNumber?: React.ReactNode;
 }
 
-const FileList: React.FC<FileListProps> = ({ files, onFileDeleted, loading, error, currentPage = 1, pageSize = 100, totalFiles = 0, totalPages = 0, onPageChange }) => {
+const FileList: React.FC<FileListProps> = ({ bucketId, files, onFileDeleted, loading, error, currentPage = 1, pageSize = 100, totalFiles = 0, totalPages = 0, onPageChange, onUploadComplete }) => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<FileItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<{ fileId: string; message: string } | null>(null);
+  const [dndUploading, setDndUploading] = useState(false);
+  const [dndError, setDndError] = useState<string | null>(null);
+
+  const processFiles = useCallback(async (filesToUpload: File[]) => {
+    if (!filesToUpload || filesToUpload.length === 0) return;
+    try {
+      setDndUploading(true);
+      setDndError(null);
+      for (const file of filesToUpload) {
+        await uploadFile(file, bucketId);
+      }
+      if (onUploadComplete) onUploadComplete(null);
+    } catch (err: any) {
+      console.error('Drag-and-drop upload failed:', err);
+      setDndError(err?.message || 'Upload failed');
+    } finally {
+      setDndUploading(false);
+    }
+  }, [bucketId, onUploadComplete]);
+
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    await processFiles(acceptedFiles);
+  }, [processFiles]);
+
+  // Separate dropzones for empty state and non-empty list to ensure proper event capture
+  const {
+    getRootProps: getEmptyRootProps,
+    getInputProps: getEmptyInputProps,
+    isDragActive: isEmptyDragActive,
+  } = useDropzone({ onDrop, multiple: true, noClick: true, noKeyboard: true });
+
+  const {
+    getRootProps: getListRootProps,
+    getInputProps: getListInputProps,
+    isDragActive: isListDragActive,
+  } = useDropzone({ onDrop, multiple: true, noClick: true, noKeyboard: true });
 
   const handleDownload = async (fileId: string) => {
     try {
       // Add a loading state for the specific file being downloaded
       setDownloadingFile(fileId);
       
-      // Get blob URL with proper authentication headers
-      const blobUrl = await downloadFile(fileId);
+      // Get direct download URL and let browser handle streaming download immediately
+      const downloadUrl = await downloadFile(bucketId, fileId);
       
       // Create a hidden anchor element
       const link = document.createElement('a');
@@ -52,7 +91,7 @@ const FileList: React.FC<FileListProps> = ({ files, onFileDeleted, loading, erro
       }
       
       // Set link properties
-      link.href = blobUrl;
+      link.href = downloadUrl;
       link.download = file.filename; // Set the download filename
       link.style.display = 'none';
       
@@ -60,10 +99,9 @@ const FileList: React.FC<FileListProps> = ({ files, onFileDeleted, loading, erro
       document.body.appendChild(link);
       link.click();
       
-      // Clean up by removing the element and revoking the Blob URL
+      // Clean up by removing the element
       setTimeout(() => {
         document.body.removeChild(link);
-        URL.revokeObjectURL(blobUrl);
       }, 100);
     } catch (err: any) {
       console.error('Error downloading file:', err);
@@ -76,7 +114,7 @@ const FileList: React.FC<FileListProps> = ({ files, onFileDeleted, loading, erro
         setDownloadError(null);
       }, 5000);
     } finally {
-      // Reset loading state
+      // Reset loading state quickly; download proceeds in browser
       setDownloadingFile(null);
     }
   };
@@ -94,7 +132,7 @@ const FileList: React.FC<FileListProps> = ({ files, onFileDeleted, loading, erro
     setDeleteError(null);
     
     try {
-      await deleteFile(fileToDelete.id);
+      await deleteFile(bucketId, fileToDelete.id);
       
       // Notify parent component
       if (onFileDeleted) {
@@ -121,8 +159,12 @@ const FileList: React.FC<FileListProps> = ({ files, onFileDeleted, loading, erro
     return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+  const formatDate = (input: string) => {
+    if (!input) return '-';
+    const n = Number(input);
+    const ms = Number.isFinite(n) ? (n < 1e12 ? n * 1000 : n) : Date.parse(input);
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleString();
   };
 
   // Define table headers with row number as first column
@@ -202,7 +244,7 @@ const FileList: React.FC<FileListProps> = ({ files, onFileDeleted, loading, erro
         No files uploaded yet
       </h3>
       <p className="mt-2 text-secondary-600 dark:text-secondary-400">
-        Use the upload form above to add files
+        Click Upload above or drag files here to upload
       </p>
     </div>
   );
@@ -217,11 +259,45 @@ const FileList: React.FC<FileListProps> = ({ files, onFileDeleted, loading, erro
           <div>Download failed: {downloadError.message}</div>
         </div>
       )}
-      
+      {dndError && (
+        <div className="mb-4 text-error-600 dark:text-error-400 bg-error-50 dark:bg-error-900/30 p-3 rounded text-sm">
+          {dndError}
+        </div>
+      )}
+
       {files.length === 0 && !loading && !error ? (
-        <EmptyState />
+        <div
+          {...getEmptyRootProps()}
+          className={`relative rounded-md ${isEmptyDragActive ? 'ring-2 ring-primary-500 ring-offset-2 ring-offset-transparent' : ''}`}
+        >
+          <input {...getEmptyInputProps()} />
+          <EmptyState />
+          {dndUploading && (
+            <div className="mt-2 text-secondary-600 dark:text-secondary-300 text-sm text-center">Uploading...</div>
+          )}
+          {/* Full overlay to force-capture drop in empty state and prevent browser navigation */}
+          <div
+            className="absolute inset-0"
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const fl = Array.from(e.dataTransfer?.files || []);
+              if (fl.length) {
+                processFiles(fl as File[]);
+              }
+            }}
+          />
+        </div>
       ) : (
-        <div>
+        <div
+          {...getListRootProps()}
+          className={`rounded-md ${isListDragActive ? 'ring-2 ring-primary-500 ring-offset-2 ring-offset-transparent' : ''}`}
+        >
+          <input {...getListInputProps()} />
           <Table
             headers={tableHeaders}
             data={formattedData}
@@ -229,18 +305,22 @@ const FileList: React.FC<FileListProps> = ({ files, onFileDeleted, loading, erro
             errorMessage={error}
             renderRowIcon={renderRowIcon}
             renderActions={renderActions}
-            containerClassName="mt-4"
+            containerClassName={`mt-4 ${isListDragActive ? 'bg-secondary-50 dark:bg-secondary-900/30' : ''}`}
           />
-          
-                      {/* Pagination Controls */}
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              totalItems={totalFiles}
-              pageSize={pageSize}
-              onPageChange={onPageChange || (() => {})}
-              itemName="files"
-            />
+
+          {dndUploading && (
+            <div className="mt-2 text-secondary-600 dark:text-secondary-300 text-sm">Uploading...</div>
+          )}
+
+          {/* Pagination Controls */}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={totalFiles}
+            pageSize={pageSize}
+            onPageChange={onPageChange || (() => {})}
+            itemName="files"
+          />
         </div>
       )}
       

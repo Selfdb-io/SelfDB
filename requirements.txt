@@ -1,0 +1,62 @@
+# TDD Development Dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+pytest-xdist>=3.3.0
+
+# Configuration Management
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+pydantic-settings>=2.0.0
+
+# Docker Integration
+docker>=6.1.0
+# Note: Using docker python library instead of docker-compose package
+
+# YAML/JSON Processing
+PyYAML>=6.0.0
+jsonschema>=4.17.0
+
+# HTTP Testing
+httpx>=0.24.0
+requests>=2.31.0
+
+# Web Framework Dependencies
+starlette>=0.27.0  # For middleware and ASGI support
+fastapi>=0.100.0  # For API framework
+
+# Database Testing (for future phases)
+asyncpg>=0.28.0
+psycopg2-binary>=2.9.0
+
+# Backup System Dependencies
+boto3>=1.28.0  # For S3 backups
+azure-storage-blob>=12.17.0  # For Azure backups
+google-cloud-storage>=2.10.0  # For GCS backups
+
+# Utilities
+click>=8.1.0  # For CLI tools
+rich>=13.0.0  # For beautiful console output
+typer>=0.9.0  # For CLI development
+bcrypt>=4.0.0  # For password hashing
+
+# JWT Authentication
+PyJWT>=2.8.0  # For JWT token generation and validation
+cryptography>=41.0.0  # For JWT cryptographic operations
+
+# Code Quality
+black>=23.0.0
+isort>=5.12.0
+flake8>=6.0.0
+mypy>=1.5.0
+
+# Development Tools
+ipython>=8.14.0
+python-dateutil>=2.8.0
+psutil>=5.9.0  # For system monitoring and memory usage tests
+
+websockets
+pydantic
+python-multipart
+pydantic[email]

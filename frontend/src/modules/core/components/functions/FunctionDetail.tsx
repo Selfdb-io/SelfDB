@@ -1,22 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getFunction, deleteFunction, getFunctionVersions, updateFunction, Function } from '../../../../services/functionService';
+import { getFunction, deleteFunction, SelfFunction, getFunctionExecutions, FunctionExecution } from '../../../../services/functionService';
+import { getWebhooks, Webhook, deleteWebhook } from '../../../../services/webhookService';
 import { Loader } from '../ui/Loader';
-import { Button } from '../../../../components/ui/button';
 import { ConfirmationDialog } from '../../../../components/ui/confirmation-dialog';
-import { ChevronRight, Pencil, Trash2, Save} from 'lucide-react';
+import { ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
-import FunctionInfoModal from './FunctionInfoModal';
+import FunctionForm from './FunctionForm';
+import WebhookList from '../webhooks/WebhookList';
+import WebhookForm from '../webhooks/WebhookForm';
+import WebhookDetail from '../webhooks/WebhookDetail';
+import { Table } from '../../../../components/ui/table';
+import { Pagination } from '../../../../components/ui/pagination';
 
-// Interface for function version from API
-interface FunctionVersion {
-  id: string;
-  function_id: string;
-  code: string;
-  created_at: string;
-  updated_at?: string;
-  version_number?: number; // Made optional as it might not always be present
-}
+// Removed Versions model – backend does not expose versions endpoint
 
 // TabPanel component for better tab management
 interface TabPanelProps {
@@ -33,92 +30,84 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, activeTab, index }) => {
   );
 };
 
-// Toggle component for function status
-const Toggle: React.FC<{
-  isChecked: boolean;
-  onChange: (checked: boolean) => void;
-  id: string;
-}> = ({ isChecked, onChange, id }) => {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={isChecked}
-      id={id}
-      onClick={() => onChange(!isChecked)}
-      className={`
-        relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
-        transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
-        ${isChecked ? 'bg-green-600' : 'bg-secondary-200 dark:bg-secondary-700'}
-      `}
-    >
-      <span className="sr-only">{isChecked ? 'On' : 'Off'}</span>
-      <span
-        aria-hidden="true"
-        className={`
-          pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow 
-          ring-0 transition duration-200 ease-in-out
-          ${isChecked ? 'translate-x-4' : 'translate-x-0'}
-        `}
-      />
-    </button>
-  );
-};
+// Status toggle removed – backend doesn't support status mutations
 
 const FunctionDetail: React.FC = () => {
   const { functionId } = useParams<{ functionId: string }>();
   const navigate = useNavigate();
-  const [functionData, setFunctionData] = useState<Function | null>(null);
-  const [versions, setVersions] = useState<FunctionVersion[]>([]);
+  const [functionData, setFunctionData] = useState<SelfFunction | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
-  const [isEditingCode, setIsEditingCode] = useState(false);
-  const [editedCode, setEditedCode] = useState<string>('');
-  const [isSavingCode, setIsSavingCode] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [isFunctionInfoModalOpen, setIsFunctionInfoModalOpen] = useState(false);
+  
+  // Webhooks state
+  const [webhooks, setWebhooks] = useState<Webhook[]>([]);
+  const [webhooksLoading, setWebhooksLoading] = useState(false);
+  const [webhooksError, setWebhooksError] = useState<string | null>(null);
+  const [showWebhookForm, setShowWebhookForm] = useState(false);
+  const [editingWebhook, setEditingWebhook] = useState<Webhook | null>(null);
+  const [selectedWebhookId, setSelectedWebhookId] = useState<string | null>(null);
+  const [deleteWebhookDialogOpen, setDeleteWebhookDialogOpen] = useState(false);
+  const [isDeletingWebhook, setIsDeletingWebhook] = useState(false);
+  const [deleteWebhookError, setDeleteWebhookError] = useState<string | null>(null);
+
+  // Executions state
+  const [executions, setExecutions] = useState<FunctionExecution[]>([]);
+  const [executionsLoading, setExecutionsLoading] = useState(false);
+  const [executionsError, setExecutionsError] = useState<string | null>(null);
+  // Executions pagination state (we fetch 200 per page)
+  const [execPage, setExecPage] = useState(1);
+  const [execPageSize] = useState(200);
+  const [execTotal, setExecTotal] = useState(0);
+  const [execTotalPages, setExecTotalPages] = useState(0);
+
+  const handleDeleteWebhookConfirm = async () => {
+    if (!selectedWebhookId) return;
+    setIsDeletingWebhook(true);
+    setDeleteWebhookError(null);
+    try {
+      await deleteWebhook(selectedWebhookId);
+      // remove from list and close detail
+      setWebhooks(prev => prev.filter(w => w.id !== selectedWebhookId));
+      setSelectedWebhookId(null);
+      setDeleteWebhookDialogOpen(false);
+    } catch (err: any) {
+      console.error('Error deleting webhook:', err);
+      setDeleteWebhookError(err.response?.data?.detail || err.message || 'Failed to delete webhook');
+    } finally {
+      setIsDeletingWebhook(false);
+    }
+  };
 
   useEffect(() => {
     if (!functionId) return;
 
-    const fetchFunctionDetails = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
         // Fetch function details
         const data = await getFunction(functionId);
-        
-        // Convert is_active boolean to status string if status is undefined
-        if (data.status === undefined && data.is_active !== undefined) {
-          data.status = data.is_active ? 'active' : 'draft';
-        }
-        
         setFunctionData(data);
-        setEditedCode(data.code || '');
-
-        // Fetch function versions
-        try {
-          const versionData = await getFunctionVersions(functionId);
-          setVersions(versionData);
-        } catch (versionErr: any) {
-          console.error('Error fetching versions:', versionErr);
-        }
-
         setError(null);
+        
+          // Fetch webhooks for this function
+          await fetchWebhooks();
+          // Fetch executions for this function (paged)
+          await fetchExecutions();
       } catch (err: any) {
-        console.error('Error fetching function details:', err);
-        setError(err.response?.data?.detail || err.message || 'Failed to load function details');
+        console.error('Error fetching data:', err);
+        setError(err.response?.data?.detail || err.message || 'Failed to load data');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchFunctionDetails();
-  }, [functionId]);
+    fetchData();
+  }, [functionId, execPage]);
 
   const handleTabChange = (tabIndex: number) => {
     setActiveTab(tabIndex);
@@ -151,97 +140,81 @@ const FunctionDetail: React.FC = () => {
     setDeleteError(null);
   };
 
-  const handleCodeChange = (newCode: string) => {
-    setEditedCode(newCode);
-  };
-
-  const handleToggleEditCode = () => {
-    if (isEditingCode && functionData) {
-      // Cancel editing, reset to original code
-      setEditedCode(functionData.code || '');
-    }
-    setIsEditingCode(!isEditingCode);
-    setSaveError(null);
-  };
-
-  const handleSaveCode = async () => {
-    if (!functionId || !functionData) return;
-
-    setIsSavingCode(true);
-    setSaveError(null);
-
-    try {
-      const updatedFunction = await updateFunction(functionId, {
-        ...functionData,
-        code: editedCode
-      });
-
-      // Update the function data
-      setFunctionData(updatedFunction);
-      
-      // Refresh versions
-      const versionData = await getFunctionVersions(functionId);
-      setVersions(versionData);
-      
-      // Exit edit mode
-      setIsEditingCode(false);
-    } catch (err: any) {
-      console.error('Error saving function code:', err);
-      setSaveError(err.response?.data?.detail || err.message || 'Failed to save function code');
-    } finally {
-      setIsSavingCode(false);
-    }
-  };
-
-  // Function to display differences between versions
-  const getDiffDisplay = (oldCode: string, newCode: string) => {
-    if (!oldCode || !newCode) return 'Cannot compare versions';
-
-    // Simple line-by-line diff
-    const oldLines = oldCode.split('\n');
-    const newLines = newCode.split('\n');
-    const maxLines = Math.max(oldLines.length, newLines.length);
-    let diffOutput = '';
-
-    for (let i = 0; i < maxLines; i++) {
-      const oldLine = i < oldLines.length ? oldLines[i] : null;
-      const newLine = i < newLines.length ? newLines[i] : null;
-
-      if (oldLine === null) {
-        // Line added
-        diffOutput += `+ ${newLine}\n`;
-      } else if (newLine === null) {
-        // Line removed
-        diffOutput += `- ${oldLine}\n`;
-      } else if (oldLine !== newLine) {
-        // Line changed
-        diffOutput += `- ${oldLine}\n+ ${newLine}\n`;
-      } else {
-        // Line unchanged
-        diffOutput += `  ${newLine}\n`;
-      }
-    }
-
-    return diffOutput;
-  };
-
   const handleFunctionInfoUpdate = () => {
     // Refresh function data after update
     if (functionId) {
       getFunction(functionId)
         .then(data => {
-          // Convert is_active boolean to status string if status is undefined
-          if (data.status === undefined && data.is_active !== undefined) {
-            data.status = data.is_active ? 'active' : 'draft';
-          }
-          
           setFunctionData(data);
         })
         .catch(err => {
-          console.error('Error refreshing function details:', err);
+          console.error('Error refreshing function data:', err);
         });
     }
   };
+
+  // Webhooks functions
+  const fetchWebhooks = async () => {
+    if (!functionId) return;
+    
+    try {
+      setWebhooksLoading(true);
+      setWebhooksError(null);
+      const response = await getWebhooks(100, 0); // Get all webhooks, we'll filter by function_id
+      const functionWebhooks = response.webhooks.filter(w => w.function_id === functionId);
+      setWebhooks(functionWebhooks);
+    } catch (err: any) {
+      console.error('Error fetching webhooks:', err);
+      setWebhooksError(err.response?.data?.detail || err.message || 'Failed to load webhooks');
+    } finally {
+      setWebhooksLoading(false);
+    }
+  };
+
+  // Executions functions
+  const fetchExecutions = async () => {
+    if (!functionId) return;
+
+    try {
+      setExecutionsLoading(true);
+      setExecutionsError(null);
+      // Fetch executions for the overview strip with pagination
+      const response = await getFunctionExecutions(functionId, execPageSize, (execPage - 1) * execPageSize);
+      setExecutions(response.executions || []);
+      setExecTotal(response.total || 0);
+      setExecTotalPages(Math.ceil((response.total || 0) / execPageSize));
+    } catch (err: any) {
+      console.error('Error fetching executions:', err);
+      setExecutionsError(err.response?.data?.detail || err.message || 'Failed to load executions');
+    } finally {
+      setExecutionsLoading(false);
+    }
+  };
+
+  const handleCreateWebhook = () => {
+    setEditingWebhook(null);
+    setShowWebhookForm(true);
+  };
+
+  const handleEditWebhook = (webhook: Webhook) => {
+    setEditingWebhook(webhook);
+    setShowWebhookForm(true);
+  };
+
+  const handleWebhookFormClose = () => {
+    setShowWebhookForm(false);
+    setEditingWebhook(null);
+  };
+
+  const handleWebhookDeleted = (webhookId: string) => {
+    setWebhooks(prev => prev.filter(w => w.id !== webhookId));
+  };
+
+  const handleWebhookUpdated = () => {
+    fetchWebhooks(); // Refresh webhooks list
+  };
+
+  // Note: executions are fetched by the main fetchData flow and when execPage changes
 
   if (loading) {
     return (
@@ -315,35 +288,6 @@ const FunctionDetail: React.FC = () => {
             {functionData.name}
           </h2>
           <div className="flex items-center ml-3">
-            <div className="flex items-center">
-              <Toggle
-                id={`function-toggle-${functionId}`}
-                isChecked={functionData.status === 'active'}
-                onChange={async (checked) => {
-                  try {
-                    // Update function status
-                    const updatePayload: Partial<Function> = {
-                      is_active: checked,
-                      status: checked ? 'active' : 'draft'
-                    };
-                    
-                    await updateFunction(functionId, updatePayload);
-                    
-                    // Update local state
-                    setFunctionData({
-                      ...functionData,
-                      status: checked ? 'active' : 'draft',
-                      is_active: checked
-                    });
-                  } catch (err) {
-                    console.error('Error updating function status:', err);
-                  }
-                }}
-              />
-              <span className="ml-2 text-xs font-medium text-secondary-600 dark:text-secondary-400">
-                {functionData.status === 'active' ? 'On' : 'Off'}
-              </span>
-            </div>
             {functionData.description && (
               <span className="ml-2 italic text-sm text-secondary-600 dark:text-secondary-400">
                 {functionData.description}
@@ -370,7 +314,7 @@ const FunctionDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Tab Navigation */}
+      {/* Tab Navigation (Overview, Code, Webhooks) */}
       <div className="mb-6 border-b border-secondary-200 dark:border-secondary-700">
         <div className="flex space-x-1 overflow-x-auto">
           <button
@@ -401,7 +345,7 @@ const FunctionDetail: React.FC = () => {
                 : 'text-secondary-600 hover:text-secondary-700 dark:text-secondary-400 dark:hover:text-secondary-300'
             }`}
           >
-            Versions
+            Webhooks
           </button>
         </div>
       </div>
@@ -410,47 +354,129 @@ const FunctionDetail: React.FC = () => {
       <div className="bg-white dark:bg-secondary-800 rounded-lg shadow border border-secondary-200 dark:border-secondary-700">
         <TabPanel activeTab={activeTab} index={0}>
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-lg font-semibold mb-4 text-secondary-800 dark:text-white">Function Details</h3>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-secondary-500 dark:text-secondary-400">HTTP Endpoint</p>
-                    <p className="mt-1 font-mono bg-secondary-50 dark:bg-secondary-900 p-2 rounded text-secondary-800 dark:text-white">
-                      /{functionData.name.toLowerCase()}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-secondary-500 dark:text-secondary-400">Trigger Type</p>
-                    <p className="mt-1">{functionData.trigger_type || 'HTTP'}</p>
-                  </div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-secondary-800 dark:text-white">Function Executions</h3>
+              <button
+                onClick={() => setIsFunctionInfoModalOpen(true)}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+              >
+                View Function Details
+              </button>
+            </div>
+
+            {/* Execution status strip: fixed-width grid with 200 bars (green=success, red=failure, gray=empty) */}
+            <div className="mb-4">
+              <div className="w-full">
+                <div
+                  className="w-full"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${execPageSize}, 1fr)`,
+                    alignItems: 'center'
+                  }}
+                >
+                  {Array.from({ length: execPageSize }).map((_, slotIndex) => {
+                    const ex = executions[slotIndex];
+                    if (ex) {
+                      let isSuccess = false;
+                      try {
+                        if (ex.result) {
+                          const parsed = typeof ex.result === 'string' ? (() => { try { return JSON.parse(ex.result); } catch { return null; } })() : ex.result;
+                          if (parsed && typeof parsed === 'object' && 'success' in parsed) {
+                            isSuccess = !!parsed.success;
+                          } else {
+                            isSuccess = ex.status === 'completed';
+                          }
+                        } else {
+                          isSuccess = ex.status === 'completed';
+                        }
+                      } catch (e) {
+                        isSuccess = ex.status === 'completed';
+                      }
+
+                      return (
+                        <div
+                          key={ex.id || slotIndex}
+                          title={`${ex.started_at || ex.created_at || ''} — ${isSuccess ? 'success' : 'failure'}`}
+                          className={`rounded-sm ${isSuccess ? 'bg-success-500 dark:bg-success-400' : 'bg-error-500 dark:bg-error-400'}`}
+                          style={{ width: '50%', height: '20px', justifySelf: 'center' }}
+                        />
+                      );
+                    }
+
+                    // empty slot
+                    return (
+                      <div
+                        key={`empty-${slotIndex}`}
+                        title={`No execution`}
+                        className="rounded-sm bg-secondary-200 dark:bg-secondary-700"
+                        style={{ width: '50%', height: '20px', justifySelf: 'center' }}
+                      />
+                    );
+                  })}
                 </div>
               </div>
-              <div>
-                <h3 className="text-lg font-semibold mb-4 text-secondary-800 dark:text-white">Status</h3>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-secondary-500 dark:text-secondary-400">Status</p>
-                    <div className="mt-1">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                        ${functionData.status === 'active' 
-                          ? 'bg-success-100 dark:bg-success-900/20 text-success-800 dark:text-success-300' 
-                          : 'bg-warning-100 dark:bg-warning-900/20 text-warning-800 dark:text-warning-300'}`}
-                      >
-                        {functionData.status === 'active' ? 'On' : 'Off'}
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-secondary-500 dark:text-secondary-400">Created</p>
-                    <p className="mt-1">{new Date(functionData.created_at).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-secondary-500 dark:text-secondary-400">Last Updated</p>
-                    <p className="mt-1">{new Date(functionData.updated_at).toLocaleString()}</p>
-                  </div>
-                </div>
-              </div>
+            </div>
+
+            <Table
+              headers={[
+                { key: 'number', label: '#', isNumeric: true },
+                { key: 'id', label: 'Execution ID' },
+                { key: 'trigger_type', label: 'Trigger' },
+                { key: 'trigger_source', label: 'Trigger Source' },
+                { key: 'status', label: 'Status' },
+                { key: 'started_at', label: 'Started', isSortable: true },
+                { key: 'completed_at', label: 'Completed' },
+                { key: 'duration_ms', label: 'Duration', isNumeric: true },
+                { key: 'memory_used_mb', label: 'Memory (MB)', isNumeric: true },
+                { key: 'cpu_usage_percent', label: 'CPU %', isNumeric: true },
+                { key: 'result', label: 'Result' },
+                { key: 'error_message', label: 'Error' },
+                { key: 'error_type', label: 'Error Type' },
+                { key: 'created_at', label: 'Created' }
+              ]}
+              data={executions.map((execution, index) => ({
+                ...execution,
+                // Display numbers ascending (1..N) while rows remain newest-first
+                number: index + 1,
+                id: execution.id.substring(0, 8) + '...', // Truncate ID for display
+                started_at: execution.started_at ? new Date(execution.started_at).toLocaleString() : 'N/A',
+                completed_at: execution.completed_at ? new Date(execution.completed_at).toLocaleString() : 'N/A',
+                duration_ms: execution.duration_ms ? `${execution.duration_ms}ms` : 'N/A',
+                memory_used_mb: execution.memory_used_mb ? `${execution.memory_used_mb}MB` : 'N/A',
+                cpu_usage_percent: execution.cpu_usage_percent ? `${execution.cpu_usage_percent}%` : 'N/A',
+                result: execution.result ? 
+                  (execution.result.length > 50 ? `${execution.result.substring(0, 50)}...` : execution.result) : 
+                  'No result',
+                error_message: execution.error_message ? 
+                  (execution.error_message.length > 30 ? `${execution.error_message.substring(0, 30)}...` : execution.error_message) : 
+                  '',
+                error_type: execution.error_type || '',
+                created_at: execution.created_at ? new Date(execution.created_at).toLocaleString() : 'N/A'
+              }))}
+              isLoading={executionsLoading}
+              errorMessage={executionsError}
+              onSort={(key) => {
+                // For now, just sort by started_at descending (newest first)
+                if (key === 'started_at') {
+                  setExecutions(prev => [...prev].sort((a, b) => 
+                    new Date(b.started_at || 0).getTime() - new Date(a.started_at || 0).getTime()
+                  ));
+                }
+              }}
+              sortKey="started_at"
+              sortDirection="desc"
+            />
+            {/* Executions pagination controls */}
+            <div className="mt-4">
+              <Pagination
+                currentPage={execPage}
+                totalPages={execTotalPages}
+                totalItems={execTotal}
+                pageSize={execPageSize}
+                onPageChange={(p) => setExecPage(p)}
+                itemName="executions"
+              />
             </div>
           </div>
         </TabPanel>
@@ -459,48 +485,17 @@ const FunctionDetail: React.FC = () => {
           <div className="p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-secondary-800 dark:text-white">Function Code</h3>
-              <div className="flex space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleToggleEditCode}
-                >
-                  {isEditingCode ? 'Cancel' : 'Edit Code'}
-                </Button>
-                {isEditingCode && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleSaveCode}
-                    disabled={isSavingCode}
-                    className="flex items-center"
-                  >
-                    {isSavingCode ? (
-                      <>
-                        <Loader size="small" className="mr-2" /> Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4 mr-2" /> Save Changes
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
+              <p className="text-sm text-secondary-500 dark:text-secondary-400">
+                Code can be updated via the function settings
+              </p>
             </div>
-            
-            {saveError && (
-              <div className="mb-4 p-4 bg-error-100 dark:bg-error-900/20 text-error-700 dark:text-error-300 rounded-md text-sm">
-                {saveError}
-              </div>
-            )}
 
             <div className="border border-secondary-200 dark:border-secondary-700 rounded-lg overflow-hidden">
-              <CodeEditor 
-                value={isEditingCode ? editedCode : functionData.code || '// No code available'} 
-                readOnly={!isEditingCode}
+              <CodeEditor
+                value={functionData?.code || '// No code available'}
+                readOnly={true}
                 height="400px"
-                onChange={handleCodeChange}
+                onChange={() => {}}
               />
             </div>
           </div>
@@ -508,57 +503,42 @@ const FunctionDetail: React.FC = () => {
 
         <TabPanel activeTab={activeTab} index={2}>
           <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4 text-secondary-800 dark:text-white">Version History</h3>
-            
-            {versions && versions.length > 0 ? (
-              <div className="space-y-4">
-                {versions.map((version, index) => (
-                  <div key={version.id} className="border border-secondary-200 dark:border-secondary-700 rounded-lg p-4">
-                    <div className="flex justify-between items-center mb-3">
-                      <div>
-                        <h4 className="font-medium text-secondary-800 dark:text-white">
-                          Version {version.version_number || index + 1}
-                        </h4>
-                        <p className="text-sm text-secondary-500 dark:text-secondary-400">
-                          Created: {new Date(version.created_at).toLocaleString()}
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSelectedVersion(version.id === selectedVersion ? null : version.id)}
-                      >
-                        {version.id === selectedVersion ? 'Hide Code' : 'View Code'}
-                      </Button>
-                    </div>
-
-                    {version.id === selectedVersion && (
-                      <div className="mt-4">
-                        <div className="border border-secondary-200 dark:border-secondary-700 rounded-lg overflow-hidden">
-                          <CodeEditor 
-                            value={version.code || '// No code available'} 
-                            readOnly={true} 
-                            height="300px" 
-                          />
-                        </div>
-
-                        {index < versions.length - 1 && (
-                          <div className="mt-4 bg-secondary-50 dark:bg-secondary-900 p-4 rounded-lg">
-                            <h5 className="font-medium mb-2 text-secondary-800 dark:text-white">Changes from previous version</h5>
-                            <div className="font-mono text-sm whitespace-pre-wrap bg-white dark:bg-secondary-800 p-3 rounded border border-secondary-200 dark:border-secondary-700 overflow-auto max-h-64">
-                              {getDiffDisplay(versions[index + 1].code, version.code)}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
+            {!selectedWebhookId && (
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-secondary-800 dark:text-white">Webhooks</h3>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={handleCreateWebhook}
+                    className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+                  >
+                    Create Webhook
+                  </button>
+                </div>
               </div>
+            )}
+
+            {selectedWebhookId ? (
+              <WebhookDetail
+                inline
+                inlineWebhookId={selectedWebhookId}
+                onClose={() => setSelectedWebhookId(null)}
+                onDeleted={(id) => {
+                  setWebhooks(prev => prev.filter(w => w.id !== id));
+                  setSelectedWebhookId(null);
+                }}
+              />
             ) : (
-              <div className="text-secondary-500 dark:text-secondary-400 py-4">
-                No version history available. Version history is created each time you update this function.
-              </div>
+              <WebhookList
+                webhooks={webhooks}
+                onWebhookClick={(webhookId) => {
+                  // Show inline detail instead of navigating away
+                  setSelectedWebhookId(webhookId);
+                }}
+                onEditWebhook={handleEditWebhook}
+                onWebhookDeleted={handleWebhookDeleted}
+                loading={webhooksLoading}
+                error={webhooksError}
+              />
             )}
           </div>
         </TabPanel>
@@ -588,20 +568,57 @@ const FunctionDetail: React.FC = () => {
         isConfirmLoading={isDeleting}
       />
 
-      {/* Add the FunctionInfoModal at the end of the component */}
+      {/* Webhook Delete Confirmation (inline) */}
+      <ConfirmationDialog
+        isOpen={deleteWebhookDialogOpen}
+        onClose={() => setDeleteWebhookDialogOpen(false)}
+        onConfirm={handleDeleteWebhookConfirm}
+        title="Delete Webhook"
+        description={
+          <>
+            <p className="text-secondary-600 dark:text-secondary-300">
+              Are you sure you want to delete this webhook? This action cannot be undone.
+            </p>
+            {deleteWebhookError && (
+              <div className="mt-3 p-2 bg-error-100 dark:bg-error-900 text-error-700 dark:text-error-300 rounded-md text-sm">
+                {deleteWebhookError}
+              </div>
+            )}
+          </>
+        }
+        confirmButtonText={isDeletingWebhook ? 'Deleting...' : 'Delete'}
+        isDestructive={true}
+        isConfirmLoading={isDeletingWebhook}
+      />
+
+      {/* Add the FunctionForm at the end of the component */}
       {functionId && functionData && (
-        <FunctionInfoModal
+        <FunctionForm
           isOpen={isFunctionInfoModalOpen}
           onClose={() => setIsFunctionInfoModalOpen(false)}
+          onSuccess={(updatedFunction) => {
+            setFunctionData(updatedFunction);
+            handleFunctionInfoUpdate();
+          }}
+          editFunction={functionData}
+        />
+      )}
+
+      {/* Webhook Form Modal */}
+      {showWebhookForm && functionId && (
+        <WebhookForm
+          isOpen={showWebhookForm}
+          onClose={handleWebhookFormClose}
           functionId={functionId}
-          functionName={functionData.name}
-          functionDescription={functionData.description}
-          functionStatus={functionData.status}
-          onUpdate={handleFunctionInfoUpdate}
+          editWebhook={editingWebhook}
+          onSuccess={() => {
+            handleWebhookUpdated();
+            handleWebhookFormClose();
+          }}
         />
       )}
     </div>
   );
 };
 
-export default FunctionDetail; 
+export default FunctionDetail;
