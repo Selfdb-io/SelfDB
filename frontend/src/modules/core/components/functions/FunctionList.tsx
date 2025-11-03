@@ -1,20 +1,20 @@
 import React, { useState } from 'react';
 import { MoreVertical, DatabaseZap } from 'lucide-react';
-import { Function, deleteFunction } from '../../../../services/functionService';
+import { SelfFunction, deleteFunction } from '../../../../services/functionService';
 import { ConfirmationDialog } from '../../../../components/ui/confirmation-dialog';
 import { formatDistanceToNow } from 'date-fns';
 import { Table, TableHeader } from '../../../../components/ui/table';
 
 interface FunctionListProps {
-  functions: Function[];
+  functions: SelfFunction[];
   onFunctionClick: (functionId: string) => void;
-  onEditFunction: (func: Function) => void;
+  onEditFunction: (func: SelfFunction) => void;
   onFunctionDeleted: (functionId: string) => void;
   loading: boolean;
   error: string | null;
 }
 
-interface FormattedFunction extends Function {
+interface FormattedFunction extends SelfFunction {
   lastUpdated: string;
   statusLabel: React.ReactNode;
 }
@@ -32,15 +32,8 @@ const FunctionList: React.FC<FunctionListProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Convert is_active to status for each function if needed
-  const processedFunctions = functions.map(func => {
-    const processedFunc = { ...func };
-    // If status is undefined but is_active is defined, derive status from is_active
-    if (processedFunc.status === undefined && processedFunc.is_active !== undefined) {
-      processedFunc.status = processedFunc.is_active ? 'active' : 'draft';
-    }
-    return processedFunc;
-  });
+  // Convert functions for display (no status compatibility needed)
+  const processedFunctions = functions;
 
   if (loading) {
     return (
@@ -93,6 +86,9 @@ const FunctionList: React.FC<FunctionListProps> = ({
 
   const tableHeaders: TableHeader[] = [
     { key: 'name', label: 'Name' },
+    { key: 'runtime', label: 'Runtime' },
+    { key: 'deploymentStatus', label: 'Deployment' },
+    { key: 'executionCount', label: 'Executions' },
     { key: 'statusLabel', label: 'Status' },
     { key: 'lastUpdated', label: 'Last Updated' },
   ];
@@ -100,13 +96,28 @@ const FunctionList: React.FC<FunctionListProps> = ({
   const formattedData: FormattedFunction[] = processedFunctions.map(func => ({
     ...func,
     lastUpdated: formatDistanceToNow(new Date(func.updated_at), { addSuffix: true }),
-    statusLabel: (
+    runtime: func.runtime.toUpperCase(),
+    deploymentStatus: (
       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-        ${func.status === 'active' 
-          ? 'bg-success-100 dark:bg-success-900/20 text-success-800 dark:text-success-300' 
+        ${func.deployment_status === 'deployed'
+          ? 'bg-success-100 dark:bg-success-900/20 text-success-800 dark:text-success-300'
+          : func.deployment_status === 'failed'
+          ? 'bg-error-100 dark:bg-error-900/20 text-error-800 dark:text-error-300'
           : 'bg-warning-100 dark:bg-warning-900/20 text-warning-800 dark:text-warning-300'}`}
       >
-        {func.status === 'active' ? 'On' : 'Off'}
+        {func.deployment_status === 'deployed' ? 'Deployed' :
+         func.deployment_status === 'failed' ? 'Failed' :
+         func.deployment_status === 'pending' ? 'Pending' : 'Draft'}
+      </span>
+    ),
+    executionCount: `${func.execution_success_count}/${func.execution_count}`,
+    statusLabel: (
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+        ${func.is_active
+          ? 'bg-success-100 dark:bg-success-900/20 text-success-800 dark:text-success-300'
+          : 'bg-warning-100 dark:bg-warning-900/20 text-warning-800 dark:text-warning-300'}`}
+      >
+        {func.is_active ? 'Active' : 'Inactive'}
       </span>
     ),
   }));

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Column, addColumn, updateColumn, deleteColumn } from '../../../../services/tableService';
+import React, { useEffect, useState } from 'react';
+import { Column, ColumnDefinition, addColumn, updateColumn, deleteColumn } from '../../../../services/tableService';
 import { Table, TableHeader } from '../../../../components/ui/table';
-import { Edit, Trash, AlertTriangle, KeyRound } from 'lucide-react';
+import { Edit, Trash, AlertTriangle, KeyRound, PlusCircle } from 'lucide-react';
 import { Input } from '../../../../components/ui/input';
 import { Button } from '../../../../components/ui/button';
 import { DATA_TYPES, CHARACTER_TYPES, NUMERIC_TYPES } from '../../constants/databaseTypes';
@@ -32,16 +32,29 @@ const ColumnModal: React.FC<ColumnModalProps> = ({
 }) => {
   const [columnData, setColumnData] = useState<Partial<Column>>(
     column || {
-      column_name: '',
-      data_type: 'TEXT',
-      is_nullable: 'YES',
-      column_default: null,
-      character_maximum_length: undefined,
-      column_description: ''
+      name: '',
+      type: 'text',
+      nullable: true,
+      default: null,
     }
   );
   
   const [error, setError] = useState<string | null>(null);
+
+  // Reset form values each time the modal opens or when switching between add/edit
+  useEffect(() => {
+    if (isOpen) {
+      setColumnData(
+        column || {
+          name: '',
+          type: 'text',
+          nullable: true,
+          default: null,
+        }
+      );
+      setError(null);
+    }
+  }, [isOpen, column]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -55,28 +68,26 @@ const ColumnModal: React.FC<ColumnModalProps> = ({
     e.preventDefault();
     
     // Basic validation
-    if (!columnData.column_name) {
+    if (!columnData.name) {
       setError('Column name is required');
       return;
     }
     
-    if (!columnData.data_type) {
-      setError('Data type is required');
+    if (!columnData.type) {
+      setError('Column type is required');
       return;
     }
     
-    // Format the column data based on data type
+    // Create a copy for formatting
     const formattedColumnData = { ...columnData };
     
-    // Clear precision/scale if not numeric type
-    if (!NUMERIC_TYPES.includes(formattedColumnData.data_type || '')) {
-      formattedColumnData.numeric_precision = undefined;
-      formattedColumnData.numeric_scale = undefined;
+    // Clean up type-specific fields that don't apply to the current type
+    if (!NUMERIC_TYPES.includes(formattedColumnData.type || '')) {
+      // Remove numeric-specific fields if not a numeric type
     }
     
-    // Clear length if not character type
-    if (!CHARACTER_TYPES.includes(formattedColumnData.data_type || '')) {
-      formattedColumnData.character_maximum_length = undefined;
+    if (!CHARACTER_TYPES.includes(formattedColumnData.type || '')) {
+      // Remove character-specific fields if not a character type
     }
     
     onSave(formattedColumnData);
@@ -103,8 +114,8 @@ const ColumnModal: React.FC<ColumnModalProps> = ({
             <div>
               <label className="block text-sm font-medium mb-1">Column Name</label>
               <Input
-                name="column_name"
-                value={columnData.column_name || ''}
+                name="name"
+                value={columnData.name || ''}
                 onChange={handleChange}
                 disabled={isEdit}
                 placeholder="e.g. first_name"
@@ -115,10 +126,10 @@ const ColumnModal: React.FC<ColumnModalProps> = ({
             <div>
               <label className="block text-sm font-medium mb-1">Data Type</label>
               <select
-                name="data_type"
-                value={columnData.data_type || ''}
+                name="type"
+                value={columnData.type || ''}
                 onChange={handleChange}
-                className="w-full h-10 rounded-md border border-secondary-200 bg-white px-3 py-2 text-sm"
+                className="w-full p-1 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-900 text-secondary-800 dark:text-white h-8"
               >
                 {DATA_TYPES.map(type => (
                   <option key={type} value={type}>{type}</option>
@@ -126,83 +137,29 @@ const ColumnModal: React.FC<ColumnModalProps> = ({
               </select>
             </div>
             
-            {(columnData.data_type === 'VARCHAR' || columnData.data_type === 'CHAR') && (
-              <div>
-                <label className="block text-sm font-medium mb-1">Length</label>
-                <Input
-                  name="character_maximum_length"
-                  value={columnData.character_maximum_length || ''}
-                  onChange={handleChange}
-                  type="number"
-                  min="1"
-                  placeholder="255"
-                />
-              </div>
-            )}
-            
-            {(columnData.data_type === 'NUMERIC' || columnData.data_type === 'DECIMAL') && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Precision</label>
-                  <Input
-                    name="numeric_precision"
-                    value={columnData.numeric_precision || ''}
-                    onChange={handleChange}
-                    type="number"
-                    min="1"
-                    placeholder="10"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Scale</label>
-                  <Input
-                    name="numeric_scale"
-                    value={columnData.numeric_scale || ''}
-                    onChange={handleChange}
-                    type="number"
-                    min="0"
-                    placeholder="2"
-                  />
-                </div>
-              </>
-            )}
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">  
             <div>
               <label className="block text-sm font-medium mb-1">Nullable</label>
-              <select
-                name="is_nullable"
-                value={columnData.is_nullable || 'YES'}
-                onChange={handleChange}
-                className="w-full h-10 rounded-md border border-secondary-200 bg-white px-3 py-2 text-sm"
-              >
-                <option value="YES">YES</option>
-                <option value="NO">NO</option>
-              </select>
+              <input
+                type="checkbox"
+                name="nullable"
+                checked={columnData.nullable || false}
+                onChange={(e) => handleChange({ target: { name: 'nullable', value: e.target.checked } } as any)}
+                className="w-4 h-4 text-primary-600 border-secondary-300 dark:border-secondary-600 rounded focus:ring-primary-500"
+              />
             </div>
             
             <div>
               <label className="block text-sm font-medium mb-1">Default Value</label>
               <Input
-                name="column_default"
-                value={columnData.column_default || ''}
+                name="default"
+                value={columnData.default || ''}
                 onChange={handleChange}
                 placeholder="Default value"
               />
             </div>
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea
-              name="column_description"
-              value={columnData.column_description || ''}
-              onChange={handleChange}
-              rows={3}
-              className="w-full rounded-md border border-secondary-200 bg-white px-3 py-2 text-sm"
-              placeholder="Column description..."
-            />
           </div>
           
           <div className="flex justify-end space-x-3">
@@ -302,21 +259,20 @@ const TableStructure: React.FC<TableStructureProps> = ({
   // Transform columns data to match the format expected by the Table component
   const tableData = columns.map(column => ({
     primaryKey: '',  // We'll use renderRowIcon to display the primary key indicator
-    columnName: column.column_name,
+    columnName: column.name,
     dataType: formatDataType(column),
-    nullable: column.is_nullable === 'YES' ? 'NULL' : 'NOT NULL',
-    defaultValue: column.column_default !== null ? column.column_default : 'null',
-    description: column.column_description || 'No description',
+    nullable: column.nullable ? 'NULL' : 'NOT NULL',
+    defaultValue: column.default !== null ? column.default : 'null',
+    description: 'No description', // New API doesn't support column descriptions
     // Store the original column for use in renderActions
     originalColumn: column,
   }));
 
-  // Handle column operations
   const handleAddColumn = async (columnData: Partial<Column>) => {
     setLoading(true);
     setError(null);
     try {
-      await addColumn(tableName, columnData);
+      await addColumn(tableName, columnData as ColumnDefinition);
       setIsAddModalOpen(false);
       if (onStructureChange) onStructureChange();
     } catch (err: any) {
@@ -332,7 +288,12 @@ const TableStructure: React.FC<TableStructureProps> = ({
     setLoading(true);
     setError(null);
     try {
-      await updateColumn(tableName, selectedColumn.column_name, columnData);
+      const updateData = {
+        new_name: columnData.name,
+        type: columnData.type,
+        nullable: columnData.nullable,
+      };
+      await updateColumn(tableName, selectedColumn.name, updateData);
       setIsEditModalOpen(false);
       if (onStructureChange) onStructureChange();
     } catch (err: any) {
@@ -348,7 +309,7 @@ const TableStructure: React.FC<TableStructureProps> = ({
     setLoading(true);
     setError(null);
     try {
-      await deleteColumn(tableName, selectedColumn.column_name);
+      await deleteColumn(tableName, selectedColumn.name);
       setIsDeleteModalOpen(false);
       if (onStructureChange) onStructureChange();
     } catch (err: any) {
@@ -455,14 +416,14 @@ const TableStructure: React.FC<TableStructureProps> = ({
         </div>
       )}
       
-      <div className="flex justify-end mb-4">
+      <div className="mb-4 flex justify-end">
         <Button
-          variant="secondary"
-          size="sm"
           onClick={() => setIsAddModalOpen(true)}
+          size="sm"
+          className="flex items-center gap-2"
           disabled={loading}
-          leftIcon={<span className="font-bold">+</span>}
         >
+          <PlusCircle className="w-4 h-4" />
           Add Column
         </Button>
       </div>
@@ -500,7 +461,7 @@ const TableStructure: React.FC<TableStructureProps> = ({
           onClose={() => setIsDeleteModalOpen(false)}
           onConfirm={handleDeleteColumn}
           title="Delete Column"
-          message={`Are you sure you want to delete the column "${selectedColumn.column_name}"? This action cannot be undone.`}
+          message={`Are you sure you want to delete the column "${selectedColumn.name}"? This action cannot be undone.`}
         />
       )}
     </div>
@@ -509,16 +470,7 @@ const TableStructure: React.FC<TableStructureProps> = ({
 
 // Helper function to format data type display
 const formatDataType = (column: Column): string => {
-  let dataType = column.data_type.toUpperCase();
-  
-  // Add length/precision for certain types
-  if (column.character_maximum_length && ['VARCHAR', 'CHAR', 'TEXT'].includes(dataType)) {
-    dataType += `(${column.character_maximum_length})`;
-  } else if (column.numeric_precision && ['NUMERIC', 'DECIMAL'].includes(dataType)) {
-    dataType += `(${column.numeric_precision}, ${column.numeric_scale || 0})`;
-  }
-  
-  return dataType;
+  return column.type.toUpperCase();
 };
 
 export default TableStructure; 

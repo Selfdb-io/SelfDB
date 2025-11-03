@@ -5,43 +5,55 @@ import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
 import { useAuth } from '../context/AuthContext';
 
-
 export const LoginForm: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { login, error: authError } = useAuth();
+  const { login, register, error: authError } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError(null);
     setIsLoading(true);
 
     try {
-      // Use the actual login logic from AuthContext
-      await login(email, password);
-      
-      // After successful login
-      navigate('/dashboard');
+      if (isRegistering) {
+        // Use the actual register logic from AuthContext
+        await register(email, password, firstName, lastName);
+        // After successful registration, switch to login mode
+        setIsRegistering(false);
+      } else {
+        // Use the actual login logic from AuthContext
+        await login(email, password);
+        // After successful login
+        navigate('/dashboard');
+      }
     } catch (err) {
-      setFormError('Invalid email or password. Please try again.');
+      // Error is already handled by AuthContext and stored in authError
+      // No need to set a generic formError here
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Show either form-specific error or auth context error
-  const error = formError || authError;
+  // Use auth context error directly
+  const error = authError;
 
   return (
     <div className="w-full max-w-md mx-auto space-y-6">
       <div className="text-center space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight text-secondary-900 dark:text-white">Admin Login</h1>
-        <p className="text-center text-sm text-secondary-500 dark:text-secondary-400">Welcome to the SelfDB! Please enter your details</p>
+        <h1 className="text-2xl font-bold tracking-tight text-secondary-900 dark:text-white">
+          {isRegistering ? 'Admin Registration' : 'Admin Login'}
+        </h1>
+        <p className="text-center text-sm text-secondary-500 dark:text-secondary-400">
+          {isRegistering 
+            ? 'Create a new admin account for SelfDB' 
+            : 'Welcome to the SelfDB! Please enter your details'}
+        </p>
       </div>
-
 
       {error && (
         <div className="p-3 bg-error-50 border border-error-200 text-error-600 text-sm rounded-md dark:bg-error-900/20 dark:border-error-800 dark:text-error-400">
@@ -50,45 +62,80 @@ export const LoginForm: React.FC = () => {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {isRegistering && (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="firstName" className="text-sm font-medium text-secondary-700 dark:text-secondary-300">
+                First Name
+              </Label>
+              <Input
+                id="firstName"
+                type="text"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                required
+                className="w-full px-3 py-2 border border-secondary-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-secondary-800 dark:border-secondary-600 dark:text-white"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lastName" className="text-sm font-medium text-secondary-700 dark:text-secondary-300">
+                Last Name
+              </Label>
+              <Input
+                id="lastName"
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                required
+                className="w-full px-3 py-2 border border-secondary-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-secondary-800 dark:border-secondary-600 dark:text-white"
+              />
+            </div>
+          </>
+        )}
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email" className="text-sm font-medium text-secondary-700 dark:text-secondary-300">
+            Email
+          </Label>
           <Input
             id="email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@example.com"
             required
-            autoComplete="email"
+            className="w-full px-3 py-2 border border-secondary-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-secondary-800 dark:border-secondary-600 dark:text-white"
           />
         </div>
-        
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password" className="text-sm font-medium text-secondary-700 dark:text-secondary-300">
+            Password
+          </Label>
           <Input
             id="password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            autoComplete="current-password"
+            className="w-full px-3 py-2 border border-secondary-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-secondary-800 dark:border-secondary-600 dark:text-white"
           />
         </div>
-        
-        <div className="pt-2">
-          <Button 
-            type="submit" 
-            className="w-full" 
-            disabled={isLoading}
-          >
-            {isLoading ? 'Signing in...' : 'Sign in'}
-          </Button>
-        </div>
+        <Button 
+          type="submit" 
+          disabled={isLoading}
+          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:focus:ring-offset-secondary-900"
+        >
+          {isLoading ? (
+            <span className="flex items-center">
+              <span className="h-2 w-2 rounded-full bg-white animate-pulse mr-2"></span>
+              {isRegistering ? 'Registering...' : 'Signing in...'}
+            </span>
+          ) : isRegistering ? (
+            'Register'
+          ) : (
+            'Sign in'
+          )}
+        </Button>
       </form>
-
-      <div className="text-center text-sm text-secondary-500 dark:text-secondary-400">
-        Use the superuser login credentials from your .env file
-      </div>
+      
     </div>
   );
-}; 
+};

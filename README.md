@@ -1,401 +1,472 @@
-# [SelfDB](https://selfdb.io)
+# SelfDB v0.05 · early beta
 
-![SelfDB Screenshot](Screenshot%202025-06-23%20at%2023.55.11.png)
+![SelfDB Dashboard](Screenshot%202025-11-03%20at%2016.45.23.png)
 
-SelfDB is a powerful, self-hosted, open-source alternative to Supabase that provides a complete backend platform for modern applications. Built with Python (FastAPI), React, and Deno, it combines PostgreSQL database, authentication, object storage, real-time capabilities, and serverless functions in a single, containerized solution with no vendor lock-in.
+> ⚠️ **Early beta:** This stack is shared for user testing and feedback. Expect sharp edges, manual setup, and breaking changes while the team collects real-world input for the production milestone.
 
-## 📦 Get SelfDB Latest
+SelfDB is an open-source, self-hosted backend-as-a-service platform that provides a complete, production-ready stack for building modern applications. Built with PostgreSQL at its core, SelfDB delivers database management, file storage, realtime events, serverless functions, webhooks, and an intuitive admin dashboard—all orchestrated through Docker Compose.
 
-Access the newest version at [https://selfdb.io](https://selfdb.io)
-- **Paid version is always one major version ahead** (currently v0.0.3 vs v0.0.2)
-- **Includes all the latest features and improvements**
-- **100% open source** - you're supporting development, not buying a license
-- Same MIT license, just newer features released earlier
+The 2025 rebuild delivered:
+- Unified REST API gateway with comprehensive endpoint coverage
+- Flexible multi-environment deployment with isolated port configurations  
+- Role-based access control (RBAC) with JWT authentication
+- Phoenix realtime WebSocket relay with PG NOTIFY integration
+- Deno-based serverless function runtime with multiple trigger types
+- Production-grade connection pooling via PgBouncer
+- Comprehensive test suite achieving 90%+ code coverage
 
-## 🚀 Key Features
+## Platform architecture
 
-### Core Infrastructure
-- **PostgreSQL Database (v17)**: Full-featured PostgreSQL with migrations, triggers, and advanced SQL capabilities
-- **Authentication & Authorization**: JWT-based auth with refresh tokens, user management, and anonymous API key access
-- **Custom Object Storage**: Built-in storage service for file/bucket management (no external S3 required)
-- **Real-time Engine**: WebSocket-powered real-time subscriptions for database changes and events
-- **Serverless Functions**: Deno 2.0 runtime for TypeScript/JavaScript cloud functions with multiple trigger types
-- **Admin Dashboard**: Full-featured React UI for database management, SQL editing, and platform administration
+SelfDB consists of six containerized services:
 
-### Developer Experience
-- **Docker Compose Deployment**: Single command to run the entire platform
-- **RESTful API**: FastAPI-powered API with automatic OpenAPI/Swagger documentation
-- **SQL Editor**: Built-in SQL editor with syntax highlighting and schema visualization
-- **Hot Reload**: Development mode with automatic reloading for all services
-- **Version Control**: Function versioning with history tracking
-- **Anonymous Access**: Built-in support for public APIs via API keys
+**Backend API (FastAPI)** – Unified gateway serving all REST endpoints
+- Authentication & user management (JWT + refresh tokens)
+- Dynamic table operations with schema introspection
+- SQL execution with parameterized query support
+- Bucket & file management with streaming proxies
+- Serverless function deployment & execution
+- Webhook management with delivery tracking
+- WebSocket proxy for realtime connections (`/api/v1/realtime/ws`)
+- PG NOTIFY listener forwarding database events to Phoenix
 
-### Production Features
-- **Security**: HTTPS/SSL support, secure password hashing, CORS configuration
-- **Monitoring**: Activity tracking, logging, and real-time activity feeds
-- **Data Persistence**: Docker volumes for reliable data storage
-- **Backup & Restore**: Built-in backup strategies for databases and files
-- **CI/CD Ready**: Includes Gitea workflows for automated deployments
-- **Open Source**: MIT licensed - free to use, modify, and distribute
+**Storage Service (FastAPI)** – Internal file storage engine
+- S3-compatible blob storage API with multipart upload support
+- HTTP range request handling for streaming media
+- Direct filesystem persistence to Docker volumes
 
+**Deno Runtime (Deno 2.2.11)** – Serverless function execution engine
+- TypeScript/JavaScript function execution
+- Multiple trigger types: HTTP, scheduled (cron), database (LISTEN/NOTIFY), events, webhooks
+- Direct PostgreSQL connection for LISTEN/NOTIFY (bypasses PgBouncer)
+- Hot-reload on file changes
 
-## Prerequisites
+**Phoenix Realtime (Elixir/OTP)** – WebSocket relay service
+- Channel-based pub/sub messaging
+- HTTP broadcast API for database events
+- Internal-only service (no exposed ports)
+- Accessed via Backend WebSocket proxy at `/api/v1/realtime/ws`
 
-- Docker and Docker Compose
-- Git (for cloning the repository)
-- SSL certificate and domain for production deployments
+**PostgreSQL 18 + PgBouncer** – Database layer
+- PostgreSQL 18 with latest performance optimizations
+- PgBouncer connection pooling (session mode)
+- Automatic schema initialization and migration system
+- NOTIFY triggers for realtime events
 
-## Quick Start
+**Frontend Admin Console (React + Vite + Nginx)** – Web-based control panel
+- Dashboard with system metrics & activity feed
+- SQL editor with syntax highlighting
+- Visual table designer
+- File browser with drag-and-drop uploads
+- Function editor with live deployment
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Selfdb-io/SelfDB
-   cd SelfDB
-   ```
-
-2. Create a `.env` file from the example:
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Edit the `.env` file to set secure passwords and configuration.
-
-4. Start the application using the provided script (which sets up Docker volumes for data persistence):
-   ```bash
-   ./start.sh
-   ```
-
-   **Note:** The application uses Docker named volumes for data persistence. These volumes are managed by Docker and will persist even when containers are removed.
-
-   Alternatively, you can start the services directly with Docker Compose:
-   ```bash
-   docker-compose up -d
-   ```
-
-5. The database will be automatically initialized on first startup with:
-   - Database tables created via migrations
-   - Default superuser created with the credentials specified in your `.env` file:
-     - Email: `DEFAULT_ADMIN_EMAIL` (default: `admin@example.com`)
-     - Password: `DEFAULT_ADMIN_PASSWORD` (default: `adminpassword`)
-   - Anonymous API key (`ANON_KEY`) generated for public access to resources
-
-   **Important:** Change these credentials in your `.env` file for production use!
-
-   If you need to manually run the initialization later:
-   ```bash
-   docker-compose exec backend python -m app.initial_data
-   ```
-
-6. Access the application:
-   - Frontend: http://localhost:3000
-   - API: http://localhost:8000
-   - Storage Service: http://localhost:8001
-   - Deno Runtime: http://localhost:8090 (internal service for cloud functions)
-
-## 🏗️ Architecture
-
-SelfDB uses a modern microservices architecture with all components containerized:
+## Service topology
 
 ```mermaid
-graph TB
+graph TD
     subgraph "Client Layer"
-        U[Web Browser]
-        SDK[SelfDB SDK]
-        APP[Your Applications]
+        U[Applications / SDKs]
+        ADMIN[Admin Console]
     end
 
     subgraph "SelfDB Platform"
-        subgraph "API Gateway"
-            API[Backend API<br/>FastAPI :8000]
-        end
+        API[Backend API Gateway<br/>FastAPI :8000]
         
         subgraph "Services"
-            ADMIN[Admin Dashboard<br/>React + Vite :3000]
-            STORAGE[Storage Service<br/>FastAPI :8001]
-            DENO[Deno Runtime<br/>Functions :8090]
+            ST[Storage Service :8001]
+            RT[Phoenix Realtime :4000]
+            DR[Deno Runtime :8090]
+        end
+
+        subgraph "Database"
+            PB[PgBouncer :6432]
+            PG[(PostgreSQL v18 :5432)]
         end
         
-        subgraph "Data Layer"
-            PG[(PostgreSQL v17<br/>:5432)]
-            VOL[Docker Volumes<br/>postgres_data<br/>storage_data<br/>functions]
-        end
+        VOL[Docker Volumes]
     end
 
-    U --> ADMIN
-    SDK --> API
-    APP --> API
-    
+    U --> API
     ADMIN --> API
-    API --> PG
-    API --> STORAGE
-    API --> DENO
     
-    STORAGE --> VOL
-    DENO --> PG
-    DENO --> API
+    API --> ST
+    API --> RT
+    API --> DR
+    API --> PB
     
+    ST --> PB
+    PB --> PG
+    
+    API -.Direct for NOTIFY.-> PG
+    RT -.Direct.-> PG
+    DR -.Direct for LISTEN/NOTIFY.-> PG
+    
+    ST --> VOL
     PG --> VOL
 ```
 
-### Component Details
+**Note:** PgBouncer doesn't support PostgreSQL LISTEN/NOTIFY, so services needing this feature connect directly to PostgreSQL on port 5432.
 
-- **Backend API (FastAPI)**: Core API server handling authentication, database operations, real-time subscriptions, and coordination between services
-- **Admin Dashboard (React)**: Full-featured UI for database management, SQL editing, user management, and function development
-- **Storage Service**: Custom-built object storage service for file and bucket management with streaming support
-- **Deno Runtime**: Isolated environment for executing serverless functions with TypeScript/JavaScript support
-- **PostgreSQL Database**: Primary data store with support for advanced features like triggers, LISTEN/NOTIFY, and migrations
+## Requirements
 
-## Anonymous Access
+### Host system
+- **Docker Engine 20.10+** with Docker Compose V2 (must be running)
+- **Node.js 20+** (for frontend build stage in Docker)
+- **Python 3.13+** with [`uv`](https://github.com/astral-sh/uv) package manager (for running tests and scripts)
+- **Operating system:** Linux, macOS, or Windows (with WSL2 recommended)
 
-SelfDB supports anonymous access to public resources using an API key. This allows unauthenticated clients to access designated public resources without requiring user login.
+### System resources (minimum)
+- **CPU:** 4 cores
+- **RAM:** 8 GB
+- **Disk:** 20 GB available space
+- **Network:** Ports available for service binding (see environment configuration)
 
-### How it works
+## Environment configuration
 
-1. A unique `ANON_KEY` is automatically generated during setup and stored in the `.env` file.
-2. Clients include this key in the `apikey` HTTP header of their requests.
-3. Endpoints check if the request is authenticated (JWT token), anonymous (valid `ANON_KEY`), or unauthorized.
-4. Resources (like buckets and files) have an `is_public` flag that controls whether they can be accessed anonymously.
+SelfDB uses environment files (`.env.*`) to configure all service ports, credentials, and feature flags. The platform supports multiple isolated environments running simultaneously on the same host.
 
-#### Backend Implementation
+### Environment files
 
-The SelfDB backend implements anonymous access through a dedicated authentication dependency:
+Create one or more environment files:
+- `.env.dev` – Development (local testing)
+- `.env.staging` – Staging (pre-production)
+- `.env.prod` – Production (live deployment)
 
-- An `APIKeyHeader` scheme extracts the key from the `apikey` HTTP header
-- The `get_current_user_or_anon` dependency function checks for both JWT tokens and the anon key
-- When a valid anon key is provided, it returns a special `ANON_USER_ROLE` constant
-- API endpoints can distinguish between authenticated users, anonymous users, and unauthorized requests
-- This allows for fine-grained access control based on authentication status
+### Environment template
 
+```ini
+# PROJECT IDENTIFICATION
+COMPOSE_PROJECT_NAME=selfdb_dev
+INSTANCE_ID=development
+ENV=dev
 
+# NETWORK CONFIGURATION
+DOCKER_NETWORK=selfdb_dev_network
+DOCKER_ENV=true
+DEBUG=true
 
-### Security Considerations
+# INTERNAL SERVICE PORTS (Used inside Docker network)
+INTERNAL_POSTGRES_PORT=5432
+INTERNAL_PGBOUNCER_PORT=6432
 
-- The `ANON_KEY` provides read and write access to public resources.
-- Only mark resources as public if you intend them to be accessible without authentication.
-- For production use, consider regenerating the `ANON_KEY` periodically.
-- Anonymous users can typically:
-  - Read data from public tables
-  - Write data to public tables (with appropriate permissions)
-  - List public buckets
-  - Upload files to public buckets
-  - View files from public buckets
-- Anonymous users cannot typically:
-  - Access private resources
-  - Modify or delete resources created by authenticated users
-  - Access administrative endpoints
+# EXTERNAL SERVICE PORTS (Exposed to host machine)
+POSTGRES_PORT=5432
+PGBOUNCER_PORT=6432
+STORAGE_PORT=8001
+API_PORT=8000
+FRONTEND_PORT=3000
+DENO_PORT=8090
 
-### Sample Application
+# DATABASE CONFIGURATION
+POSTGRES_DB=selfdb_dev
+POSTGRES_USER=selfdb_dev_user
+POSTGRES_PASSWORD=dev_password_123
+POSTGRES_HOST=localhost
 
-  1. https://github.com/Selfdb-io/selfdb-expo-app
-  2. https://github.com/Selfdb-io/selfdb-swift-app
-  3. https://github.com/Selfdb-io/selfdb-react-vite
+# PgBouncer connection pooling settings
+PGBOUNCER_HOST=localhost
+PGBOUNCER_POOL_MODE=session
+PGBOUNCER_MAX_CLIENT_CONN=1000
+PGBOUNCER_DEFAULT_POOL_SIZE=25
 
-**Note for Production Use:**
-When deploying the sample app to production, modify the `.env` file to use your SSL-secured API URL:
+# AUTHENTICATION & SECURITY
+API_KEY=dev_api_key_not_for_production
+JWT_SECRET_KEY=dev_jwt_secret_not_for_production
+JWT_ALGORITHM=HS256
+JWT_EXPIRATION_HOURS=72
+INTERNAL_API_KEY=dev_internal_api_key_for_service_communication
+
+# ADMIN USER BOOTSTRAP
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=adminpassword123
+ADMIN_FIRST_NAME=Admin
+ADMIN_LAST_NAME=User
+
+# CORS CONFIGURATION
+ALLOWED_CORS=http://localhost:3000,http://localhost:5173,http://localhost:8000
+
+# PHOENIX REALTIME SERVICE
+PHOENIX_ENABLED=true
+PHOENIX_SECRET_KEY_BASE=dev_phoenix_secret_key_base_minimum_64_characters_required_here_for_development_only
+
+# LOGGING & MONITORING
+LOG_LEVEL=DEBUG
+ENABLE_METRICS=true
+RELOAD=true
 ```
-VITE_API_URL=https://api.your-domain.com/api/v1
-VITE_ANON_KEY=your_anon_key
-```
 
-## Development
+### Port allocation strategy
 
-### Rebuilding Containers
+SelfDB uses configurable port mappings to allow multiple environments on one host:
 
-During development, you may need to rebuild your containers without losing your data. Use the provided rebuild script:
+| Service | Dev | Staging | Prod |
+|---------|-----|---------|------|
+| Frontend | 3000 | 3001 | 3002 |
+| Backend API | 8000 | 8010 | 8020 |
+| Storage | 8001 | 8011 | 8021 |
+| Deno Runtime | 8090 | 8091 | 8092 |
+| PostgreSQL | 5432 | 5433 | 5434 |
+| PgBouncer | 6432 | 6433 | 6434 |
+
+**Note:** Phoenix realtime service runs internally without exposed ports—clients connect via the Backend API WebSocket proxy at `/api/v1/realtime/ws`.
+
+### Security considerations
+
+**Production environment:**
+- Generate strong random values for all secrets:
+  ```bash
+  openssl rand -hex 32  # API_KEY, JWT_SECRET_KEY
+  openssl rand -hex 64  # PHOENIX_SECRET_KEY_BASE
+  ```
+- Set `DEBUG=false`
+- Restrict CORS to your application domains only
+- Enable HTTPS via reverse proxy (Nginx/Caddy/Traefik)
+- Change admin credentials after first login
+
+## Running the stack
+
+SelfDB provides a unified orchestration script (`selfdb.sh`) for managing multi-environment deployments.
+
+### Quick start (development)
 
 ```bash
-./rebuild.sh
+# Start development stack
+./selfdb.sh quick
 ```
 
-This script will rebuild all containers while preserving your data stored in Docker volumes.
+After startup, access the admin console at **http://localhost:3000** (or your configured `FRONTEND_PORT`). Login with the admin credentials from your `.env.dev` file.
 
-### Backend
-
-The backend is built with FastAPI and provides:
-
-- REST API endpoints for authentication, file management, etc.
-- WebSocket connections for real-time updates
-- Database models and migrations
-- Integration with the Storage Service for object storage
-- Cloud function management and deployment
-- Code validation and linting services for the function editor
-
-To run the backend in development mode:
+### Management commands
 
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+# Start specific environment
+./selfdb.sh up dev          # Development
+./selfdb.sh up staging      # Staging  
+./selfdb.sh up prod         # Production
+
+# Stop environment(s)
+./selfdb.sh down dev        # Stop dev only
+./selfdb.sh down            # Stop all
+
+# View container status
+./selfdb.sh ps dev          # Specific environment
+./selfdb.sh ps              # All environments
+
+# Stream logs
+./selfdb.sh logs dev        # Follow logs for dev environment
+
+# Clean up (removes containers AND volumes - data loss!)
+./selfdb.sh clean
 ```
 
-### Frontend
+### Service URLs (development defaults)
 
-The frontend is built with React and provides:
+| Service | URL | Purpose |
+|---------|-----|---------|
+| Admin Console | http://localhost:3000 | Web dashboard |
+| Backend API | http://localhost:8000 | REST API gateway |
+| API Documentation | http://localhost:8000/docs | Interactive OpenAPI docs |
+| Backend Health | http://localhost:8000/health | Service health status |
+| Storage Health | http://localhost:8001/health | Storage service health |
+| Deno Runtime Health | http://localhost:8090/health | Function runtime health |
+| PostgreSQL | localhost:5432 | Direct database access |
+| PgBouncer | localhost:6432 | Pooled connections |
 
-- User interface for authentication, file management, etc.
-- Integration with the backend API
-- Real-time updates using WebSockets
-- Cloud function management interface
+### Initial login
 
-To run the frontend in development mode:
+1. Navigate to http://localhost:3000
+2. Login with admin credentials from `.env.dev`:
+   - Email: `admin@example.com`
+   - Password: `adminpassword123`
+
+## Testing
+
+SelfDB includes a comprehensive test suite with 90%+ code coverage.
+
+### Setup
+
+Before running tests, set up the Python virtual environment:
 
 ```bash
-cd frontend
-npm install
-npm start
+uv venv
+uv install -r requirements.txt
 ```
 
-### SDK
+### Running tests
 
-SelfDB provides python, Javascript and swift SDKS:
-1. https://github.com/Selfdb-io/js-sdk
-2. https://github.com/Selfdb-io/selfdb-ios
-3. https://github.com/Selfdb-io/selfdb-py
+```bash
+# Install dependencies and run all tests
+./run_tests.sh
 
+# Run only unit tests (fast, no Docker required)
+./run_tests.sh tests/unit
 
-### Cloud Functions
+# Run only integration tests (requires Docker stack running)
+./run_tests.sh integration
 
-SelfDB's serverless functions platform powered by Deno 2.0 enables you to run custom business logic without managing servers:
+# Generate HTML coverage report
+./run_tests.sh coverage
+```
 
-#### Function Types
+### Prerequisites for integration tests
 
-1. **HTTP Functions**: REST API endpoints that respond to HTTP requests
-2. **Database Triggers**: React to INSERT, UPDATE, or DELETE operations on tables
-3. **Scheduled Functions**: Run on a cron schedule for periodic tasks
-4. **Event Functions**: Respond to custom events from your application
-5. **Setup Functions**: One-time initialization functions for data setup
+Integration tests require the SelfDB stack to be running:
 
-#### Features
+```bash
+# Terminal 1: Start the stack
+./selfdb.sh up dev
 
-- **TypeScript/JavaScript Support**: Write functions in modern JS/TS with full Deno API access
-- **Environment Variables**: Secure configuration and secrets management
-- **Direct Database Access**: Query your PostgreSQL database from functions
-- **Version Control**: Automatic versioning with rollback capabilities
-- **Hot Reload**: Instant updates in development mode
-- **Validation & Linting**: Built-in code quality checks
+# Terminal 2: Run integration tests
+./run_tests.sh integration
+```
 
+## API overview
 
+SelfDB exposes a unified REST API at `/api/v1/*` with comprehensive endpoint coverage.
 
-## Production Deployment
+### Using the REST API
 
-For production deployment, consider the following:
+**Note:** Client SDKs (Swift, JavaScript, Python) are currently on v0.04 and not yet compatible with SelfDB v0.05. For testing and integrating with client applications, use the REST API directly:
 
-1. Use strong, unique passwords in the `.env` file
-2. Set up a reverse proxy (like Nginx) with SSL/TLS
-3. Configure proper backup strategies for the data directories
-4. Set up monitoring and logging
+- **Interactive API documentation:** Access the full REST API documentation via the admin console at http://localhost:3000 → "API Reference" tab (also available at http://localhost:8000/docs)
+- **API endpoints:** All endpoints are accessible at `http://localhost:8000/api/v1/*` (or your configured `API_PORT`)
+- **Authentication:** Use JWT tokens obtained via `/api/v1/auth/login` endpoint
+- **Testing:** Use the admin dashboard's built-in API reference viewer to explore endpoints, view request/response schemas, and generate example cURL commands
 
-### Production URL Configuration
+### Authentication endpoints
 
-When deploying to production, you must configure secure URLs with SSL for both the admin interface and API access:
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/v1/auth/register` | POST | Create new user account | API key |
+| `/api/v1/auth/login` | POST | Login with email/password | API key |
+| `/api/v1/auth/refresh` | POST | Refresh access token | Refresh token |
+| `/api/v1/auth/me` | GET | Get current user profile | JWT |
+| `/api/v1/auth/logout` | POST | Logout (invalidate tokens) | JWT |
 
-1. **Frontend Admin URL**:
-   - The frontend should be accessed through a secure domain with SSL
-   - Update your reverse proxy (Nginx, etc.) to point to your SelfDB frontend container
- 
+### User management (Admin only)
 
-2. **Backend API URL**:
-   - The API should also be accessed through a secure domain with SSL
-   - Update the same or a different reverse proxy to point to your SelfDB backend container
-  
-3. **Sample Apps Configuration**:
-   - For any sample or production apps built using SelfDB, update the API URL in their environment files:
-   - Example `.env` file for a React/Vite app:
-     ```
-     VITE_API_URL=https://api.yourdomain.com/api/v1
-     VITE_ANON_KEY=your_anon_key
-     ```
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/v1/admin/users` | GET | List all users | Admin JWT |
+| `/api/v1/admin/users/{id}` | GET/PUT/DELETE | Get/Update/Delete user | Admin JWT |
 
-**Summary of Production URL Configuration:**
-- Admin UI access requires a secure domain (HTTPS) with SSL certificates
-- API access requires a secure domain with proper WebSocket support
-- All WebSocket connections must use WSS (WebSocket Secure) in production
-- All sample apps must be configured with HTTPS URLs pointing to your secured API
-- The configuration includes specific Nginx location blocks for different connection types:
-  - Standard HTTP/HTTPS requests (`/`)
-  - WebSocket connections for real-time features (`/ws/`)
-  - Dedicated realtime connections (`/realtime/`)
+### Table operations
 
-**Important**: Always use HTTPS URLs in production to ensure security for your data and authentication tokens.
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/v1/tables` | GET/POST | List/Create tables | JWT |
+| `/api/v1/tables/{name}` | GET/DELETE | Get schema/Drop table | JWT |
+| `/api/v1/tables/{name}/rows` | GET/POST | Query/Insert rows | JWT |
+| `/api/v1/tables/{name}/rows/{id}` | GET/PUT/DELETE | Get/Update/Delete row | JWT |
 
-## Backup and Restore
+### SQL execution
 
-To backup your data:
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/v1/sql/execute` | POST | Execute SQL query | JWT |
+| `/api/v1/sql/snippets` | GET/POST | List/Save snippets | JWT |
+| `/api/v1/sql/snippets/{id}` | DELETE | Delete snippet | JWT |
 
-1. Stop the containers:
-   ```bash
-   docker-compose down
-   ```
-  
+### Storage buckets
 
-2. Backup the Docker volumes:
-   ```bash
-   # For PostgreSQL data
-   docker run --rm -v postgres_data:/data -v $(pwd):/backup alpine tar -czf /backup/postgres-backup.tar.gz /data
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/v1/buckets` | GET/POST | List/Create buckets | JWT |
+| `/api/v1/buckets/{name}` | GET/PUT/DELETE | Get/Update/Delete bucket | JWT |
+| `/api/v1/buckets/{name}/files` | GET | List files in bucket | JWT |
 
-   # For Storage Service data
-   docker run --rm -v storage_data:/data -v $(pwd):/backup alpine tar -czf /backup/storage-backup.tar.gz /data
-   ```
+### File operations
 
-To restore from a backup:
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/v1/files/upload` | POST | Upload file | JWT |
+| `/api/v1/files/{bucket}/{path}` | GET/HEAD/DELETE | Download/Metadata/Delete file | JWT |
 
-1. Stop the containers:
-   ```bash
-   docker-compose down
-   ```
+**Video storage best practices:**
+When storing videos, upload both the video file and a thumbnail image:
+- **Thumbnails** are more efficient to retrieve and load faster for previews, listings, and UI components
+- **Videos** can be streamed on-demand using HTTP range requests when users actually play the video
+- Store thumbnail references in your database tables alongside video metadata for efficient querying
+- Use thumbnails for grid views, search results, and preview cards; load full videos only when needed
 
-2. Remove existing volumes (if any):
-   ```bash
-   docker volume rm postgres_data storage_data || true
-   ```
+### Serverless functions
 
-3. Create empty volumes:
-   ```bash
-   docker volume create postgres_data
-   docker volume create storage_data
-   ```
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/v1/functions` | GET/POST | List/Create functions | JWT |
+| `/api/v1/functions/{id}` | GET/PUT/DELETE | Get/Update/Delete function | JWT |
+| `/api/v1/functions/{id}/deploy` | POST | Deploy function | JWT |
+| `/api/v1/functions/{id}/execute` | POST | Execute function | JWT |
+| `/api/v1/functions/{id}/executions` | GET | List executions | JWT |
+| `/api/v1/functions/{id}/logs` | GET | Get function logs | JWT |
 
-4. Restore from backup:
-   ```bash
-   # For PostgreSQL data
-   docker run --rm -v postgres_data:/data -v $(pwd):/backup alpine tar -xzf /backup/postgres-backup.tar.gz -C /
+### Webhooks
 
-   # For Storage Service data
-   docker run --rm -v storage_data:/data -v $(pwd):/backup alpine tar -xzf /backup/storage-backup.tar.gz -C /
-   ```
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/v1/webhooks` | GET/POST | List/Create webhooks | JWT |
+| `/api/v1/webhooks/{id}` | GET/PUT/DELETE | Get/Update/Delete webhook | JWT |
+| `/api/v1/webhooks/{id}/deliveries` | GET | List deliveries | JWT |
+| `/api/v1/webhooks/{id}` | POST | Trigger webhook (external) | API key or signature |
 
-5. Start the containers:
-   ```bash
-   docker-compose up -d
-   ```
+### Realtime WebSocket
 
-## 🎯 Use Cases
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/v1/realtime/ws` | WS | WebSocket connection | JWT (query param) |
+| `/api/v1/realtime/status` | GET | Realtime service status | JWT |
 
-SelfDB is perfect for:
+## Developer tooling
 
-- **SaaS Applications**: Multi-tenant apps with user authentication and file storage
-- **Mobile App Backends**: Real-time sync and offline-first applications
-- **Web Applications**: Full-stack apps with database, auth, and file handling
-- **API Services**: RESTful APIs with built-in documentation and authentication
-- **Internal Tools**: Company dashboards and admin panels with secure access
-- **IoT Platforms**: Real-time data ingestion and event processing
-- **Content Management**: File storage and management with public/private access
-- **Analytics Dashboards**: Real-time data visualization with WebSocket updates
+### API documentation generator
 
-## 🤝 Contributing
+```bash
+# Ensure stack is running
+./selfdb.sh quick
 
-We welcome contributions! Please see our contributing guidelines and code of conduct.
+# Generate API reference markdown
+uv run python scripts/generate_api_reference.py
+```
 
-## 📜 License
+Updates `frontend/src/modules/core/constants/apiReferenceMarkdown.ts` with live API documentation.
 
-SelfDB is open source software licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.
+### Storage performance benchmark
 
+Before running the benchmark, add media files to `storage-test-files/` directory. All MIME types are supported.
 
-## 🙏 Acknowledgments
+```bash
+# Basic usage (uses http://localhost:3000 by default)
+./storage_benchmark.sh
 
-SelfDB is inspired by Supabase and Firebase. 
-We aim to provide a truly self-hosted alternative with no compromises on features or developer experience.
+# Custom API URL
+API_URL=http://localhost:8000 ./storage_benchmark.sh
+```
+
+## Beta feedback & support
+
+SelfDB v0.05 early beta is open for testing and feedback. We're actively improving the platform based on real-world usage.
+
+### What we're looking for
+
+- **Deployment experiences:** Multi-environment setup, port configuration, Docker Compose compatibility
+- **Feature requests:** Missing API endpoints, SDK requirements, admin console improvements
+- **Bug reports:** Authentication edge cases, storage failures, realtime issues, performance bottlenecks
+- **Documentation needs:** Unclear setup instructions, missing usage examples, API reference gaps
+
+### How to contribute
+
+1. **File an issue** on GitHub with detailed reproduction steps
+2. **Submit a pull request** with fixes or enhancements
+3. **Join discussions** about architecture and feature priorities
+4. **Share your use case** to help prioritize development
+
+## License
+
+SelfDB is released under the [MIT License](LICENSE.md). See LICENSE.md for full details.
 
 ---
 
-Built with ❤️ by the SelfDB community.
+**Built with:** FastAPI • PostgreSQL 18 • Phoenix/Elixir • Deno • React • Docker
+
+**Version:** v0.05 early beta (2025 rebuild)
+
+For the latest updates, see `CHANGELOG.md`.

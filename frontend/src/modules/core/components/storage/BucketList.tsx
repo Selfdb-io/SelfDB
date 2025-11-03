@@ -13,8 +13,9 @@ interface BucketListProps {
 }
 
 // Create an interface for the formatted bucket data
-interface FormattedBucketData extends Omit<Bucket, 'total_size'> {
+interface FormattedBucketData extends Omit<Bucket, 'total_size' | 'created_at'> {
   total_size: string;
+  created_at: string;
   visibility: React.ReactNode;
 }
 
@@ -24,8 +25,8 @@ const BucketList: React.FC<BucketListProps> = ({
   loading, 
   error 
 }) => {
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+  const formatDate = (value: string | number) => {
+    return new Date(value).toLocaleString();
   };
 
   const formatSize = (bytes: number) => {

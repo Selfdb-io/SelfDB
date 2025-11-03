@@ -1,7 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaArrowRight } from "react-icons/fa6";
-import { Index } from '../../../../services/tableService';
 import { Table, TableHeader } from '../../../../components/ui/table';
 import { Button } from '../../../../components/ui/button';
 
@@ -18,33 +17,24 @@ interface ProcessedIndex {
 
 interface TableIndexesProps {
   tableName: string;
-  indexes?: Index[];
+  indexes?: Array<{
+    name: string;
+    columns: string[];
+    unique?: boolean;
+  }>;
 }
 
 const TableIndexes: React.FC<TableIndexesProps> = ({indexes = [] }) => {
   const navigate = useNavigate();
 
-  // Process indexes to group by index_name
+  // Process indexes - new API structure already groups columns by index
   const processedIndexes = React.useMemo<ProcessedIndex[]>(() => {
-    const indexMap = new Map<string, ProcessedIndex>();
-    
-    // Group columns by index name
-    indexes.forEach(index => {
-      if (!indexMap.has(index.index_name)) {
-        indexMap.set(index.index_name, {
-          name: index.index_name,
-          is_unique: index.is_unique,
-          is_primary: index.is_primary,
-          columns: []
-        });
-      }
-      
-      indexMap.get(index.index_name)?.columns.push({
-        name: index.column_name
-      });
-    });
-    
-    return Array.from(indexMap.values());
+    return indexes.map(index => ({
+      name: index.name,
+      is_unique: index.unique || false,
+      is_primary: false, // Primary key info not available in new API
+      columns: index.columns.map(colName => ({ name: colName }))
+    }));
   }, [indexes]);
 
   const handleNavigateToSqlEditor = () => {

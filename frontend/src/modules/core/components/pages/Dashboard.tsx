@@ -1,13 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../../auth/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { SummaryCardGroup, ActionButtonGroup, ActivitySection } from '../sections';
-import { TableIcon, AuthIcon, FunctionIcon, SettingsIcon, ClockIcon, DatabaseIcon, UserIcon } from '../icons';
+import { TableIcon, AuthIcon, FunctionIcon, SettingsIcon } from '../icons';
+import { useActivityFeed } from '../../context/ActivityFeedContext';
 import { getRegularUsersCount } from '../../../../services/userService';
 import { getTables } from '../../../../services/tableService';
 import { getUserBuckets } from '../../../../services/bucketService';
 import { getFunctions } from '../../../../services/functionService';
-import realtimeService from '../../../../services/realtimeService';
+import { FaPython, FaReact, FaSwift, FaCode } from 'react-icons/fa';
 
 // Helper function to format bytes
 const formatBytes = (bytes: number, decimals = 2): string => {
@@ -20,9 +21,10 @@ const formatBytes = (bytes: number, decimals = 2): string => {
 };
 
 const Dashboard: React.FC = () => {
-  // Token is not needed here, AuthProvider handles connection
   const auth = useAuth();
   const navigate = useNavigate();
+  const { activities, registerListener, primeBucketNames } = useActivityFeed();
+
   const [userCount, setUserCount] = useState<number>(0);
   const [tableCount, setTableCount] = useState<number>(0);
   const [storageSize, setStorageSize] = useState<number>(0);
@@ -31,6 +33,24 @@ const Dashboard: React.FC = () => {
   const [isLoadingTables, setIsLoadingTables] = useState(true);
   const [isLoadingStorage, setIsLoadingStorage] = useState(true);
   const [isLoadingFunctions, setIsLoadingFunctions] = useState(true);
+
+  const refreshStorageSize = useCallback(async () => {
+    try {
+      console.log('Refreshing storage size from database...');
+      const buckets = await getUserBuckets();
+      console.log('Fetched buckets from database:', buckets);
+      primeBucketNames(buckets);
+
+      const total = buckets.reduce((sum, bucket) => sum + (bucket.total_size ?? 0), 0);
+      console.log('Total storage size calculated:', total);
+
+      setStorageSize(total);
+    } catch (err) {
+      console.error('Error updating storage size:', err);
+    } finally {
+      setIsLoadingStorage(false);
+    }
+  }, [primeBucketNames]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -47,15 +67,12 @@ const Dashboard: React.FC = () => {
         setTableCount(tables.length);
         setIsLoadingTables(false);
 
-        // Fetch buckets and calculate total size
-        const buckets = await getUserBuckets();
-        const totalSize = buckets.reduce((acc, bucket) => acc + bucket.total_size, 0);
-        setStorageSize(totalSize);
-        setIsLoadingStorage(false);
+        // Fetch buckets and calculate total size from files
+        await refreshStorageSize();
 
         // Fetch functions count
         const functions = await getFunctions();
-        setFunctionCount(functions.length);
+        setFunctionCount(functions.total);
         setIsLoadingFunctions(false);
 
       } catch (error) {
@@ -70,116 +87,117 @@ const Dashboard: React.FC = () => {
 
     fetchData();
 
-  }, []);
+  }, [refreshStorageSize]);
 
-  // Define WebSocket handler functions outside of useEffect to avoid recreating them on each render
-  const handleUserUpdate = (data: any) => {
-    console.log('Received user update via WebSocket:', data);
-    // Refresh user count when we receive a database change notification
-    getRegularUsersCount().then((count: number) => {
-      console.log('Updated user count:', count);
-      setUserCount(count);
-    }).catch((err: any) => {
-      console.error('Error updating user count:', err);
-    });
-  };
-
-  const handleTableUpdate = (data: any) => {
-    console.log('Received table update via WebSocket:', data);
-    
-    // Always refresh the tables count when we receive any table-related notification
-    // This handles both direct table changes and metadata changes
-    getTables().then(tables => {
-      console.log('Updated table count:', tables.length);
-      setTableCount(tables.length);
-    }).catch(err => {
-      console.error('Error updating table count:', err);
-    });
-    
-    // If the table update is for files, also refresh buckets data
-    // This ensures bucket size updates even if direct bucket notifications fail
-    if (data.table === 'files') {
-      console.log('File update detected, refreshing bucket sizes');
-      getUserBuckets().then(buckets => {
-        const totalSize = buckets.reduce((acc, bucket) => acc + bucket.total_size, 0);
-        console.log('Updated storage size after file operation:', totalSize);
-        setStorageSize(totalSize);
-      }).catch(err => {
-        console.error('Error updating storage size:', err);
-      });
-    }
-  };
-
-  const handleBucketUpdate = (data: any) => {
-    console.log('Received bucket update via WebSocket:', data);
-    // Always refresh the buckets data when we receive any bucket-related notification
-    // This includes both direct bucket changes and file-triggered bucket updates
-    getUserBuckets().then(buckets => {
-      const totalSize = buckets.reduce((acc, bucket) => acc + bucket.total_size, 0);
-      console.log('Updated storage size:', totalSize);
-      setStorageSize(totalSize);
-    }).catch(err => {
-      console.error('Error updating storage size:', err);
-    });
-  };
-
-  const handleFunctionUpdate = (data: any) => {
-    console.log('Received function update via WebSocket:', data);
-    // Always refresh the functions count when we receive any function-related notification
-    getFunctions().then(functions => {
-      console.log('Updated function count:', functions.length);
-      setFunctionCount(functions.length);
-    }).catch(err => {
-      console.error('Error updating function count:', err);
-    });
-  };
-
-  // Setup WebSocket subscriptions for real-time updates
   useEffect(() => {
-    if (!auth.isAuthenticated) return;
+    if (!auth.isAuthenticated) {
+      return;
+    }
 
-    console.log('Setting up WebSocket subscriptions for Dashboard');
+    const unsubscribes: Array<() => void> = [];
 
-    // For users, we directly subscribe to the users_changes channel
-    // The getRegularUsers() function queries the 'users' table
-    const userSubscriptionId = 'users_changes';
-    realtimeService.subscribe(userSubscriptionId);
-    const removeUserListener = realtimeService.addListener(userSubscriptionId, handleUserUpdate);
+    unsubscribes.push(
+      registerListener('users_events', (event) => {
+        if (!event.data) {
+          return;
+        }
 
-    // For tables, we need to listen to the tables_changes channel
-    // The getTables() function queries the database metadata
-    // This channel will notify on any table creation/deletion events
-    const tableSubscriptionId = 'tables_changes';
-    realtimeService.subscribe(tableSubscriptionId);
-    const removeTableListener = realtimeService.addListener(tableSubscriptionId, handleTableUpdate);
+        console.log('Received user update via ActivityFeedProvider:', event.data);
+        getRegularUsersCount()
+          .then((count: number) => {
+            console.log('Updated user count:', count);
+            setUserCount(count);
+          })
+          .catch((err: unknown) => {
+            console.error('Error updating user count:', err);
+          });
+      })
+    );
 
-    // For buckets, we subscribe to the buckets_changes channel
-    // The getUserBuckets() function queries the 'buckets' table
-    const bucketSubscriptionId = 'buckets_changes';
-    realtimeService.subscribe(bucketSubscriptionId);
-    const removeBucketListener = realtimeService.addListener(bucketSubscriptionId, handleBucketUpdate);
+    unsubscribes.push(
+      registerListener('tables_events', (event) => {
+        if (!event.data) {
+          return;
+        }
 
-    // For functions, we subscribe to the functions_changes channel
-    // The getFunctions() function queries the 'functions' table
-    const functionSubscriptionId = 'functions_changes';
-    realtimeService.subscribe(functionSubscriptionId);
-    const removeFunctionListener = realtimeService.addListener(functionSubscriptionId, handleFunctionUpdate);
+        console.log('Received table update via ActivityFeedProvider:', event.data);
+        getTables()
+          .then((tables) => {
+            console.log('Updated table count:', tables.length);
+            setTableCount(tables.length);
+          })
+          .catch((err: unknown) => {
+            console.error('Error updating table count:', err);
+          });
 
-    // Cleanup on component unmount
+        if (event.data.table === 'files') {
+          console.log('File update detected in tables_events, refreshing bucket sizes');
+          refreshStorageSize().then(() => {
+            console.log('Storage size refresh completed after file update');
+          });
+        }
+      })
+    );
+
+    unsubscribes.push(
+      registerListener('files_events', (event) => {
+        if (!event.data) {
+          return;
+        }
+
+        console.log('Received file update via ActivityFeedProvider:', event.data);
+        refreshStorageSize().then(() => {
+          console.log('Storage size refresh completed after file event');
+        });
+      })
+    );
+
+    unsubscribes.push(
+      registerListener('buckets_events', (event) => {
+        if (!event.data) {
+          return;
+        }
+
+        console.log('Received bucket update via ActivityFeedProvider:', event.data);
+        const relatedBuckets: Array<Record<string, any>> = [];
+        if (event.data.new_data) {
+          relatedBuckets.push(event.data.new_data);
+        }
+        if (event.data.old_data) {
+          relatedBuckets.push(event.data.old_data);
+        }
+        if (relatedBuckets.length > 0) {
+          primeBucketNames(relatedBuckets);
+        }
+        console.log('Triggering storage size refresh due to bucket update');
+        refreshStorageSize().then(() => {
+          console.log('Storage size refresh completed');
+        });
+      })
+    );
+
+    unsubscribes.push(
+      registerListener('functions_events', (event) => {
+        if (!event.data) {
+          return;
+        }
+
+        console.log('Received function update via ActivityFeedProvider:', event.data);
+        getFunctions()
+          .then((functions) => {
+            console.log('Updated function count:', functions.total);
+            setFunctionCount(functions.total);
+          })
+          .catch((err: unknown) => {
+            console.error('Error updating function count:', err);
+          });
+      })
+    );
+
     return () => {
-      console.log('Cleaning up WebSocket subscriptions for Dashboard');
-      removeUserListener();
-      removeTableListener();
-      removeBucketListener();
-      removeFunctionListener();
-
-      // Unsubscribe from all channels
-      realtimeService.unsubscribe(userSubscriptionId);
-      realtimeService.unsubscribe(tableSubscriptionId);
-      realtimeService.unsubscribe(bucketSubscriptionId);
-      realtimeService.unsubscribe(functionSubscriptionId);
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [auth.isAuthenticated]);
+  }, [auth.isAuthenticated, registerListener, refreshStorageSize, primeBucketNames]);
 
   // Summary card data
   const summaryCards = [
@@ -241,35 +259,43 @@ const Dashboard: React.FC = () => {
     }
   ];
 
-  // Recent activity data
-  const activities = [
+  // Client libraries button data
+  const clientLibrariesButtons = [
     {
-      id: 1,
-      title: 'Database update',
-      description: 'Updated schema in users database',
-      timestamp: '2 hours ago',
-      icon: <ClockIcon className="w-5 h-5 text-secondary-600 dark:text-secondary-300" />
+      id: 'api-reference',
+      title: 'Rest API',
+      description: 'HTTP/REST API documentation',
+      icon: <FaCode />,
+      onClick: () => navigate('/api-reference'),
+      badgeLabel: 'v0.05 · early beta',
+      badgeStatus: 'ready' as const
     },
     {
-      id: 2,
-      title: 'New user',
-      description: 'Added new user to admin group',
-      timestamp: '4 hours ago',
-      icon: <UserIcon className="w-5 h-5 text-secondary-600 dark:text-secondary-300" />
+      id: 'swift-sdk',
+      title: 'Swift SDK',
+      description: 'iOS/macOS client library',
+      icon: <FaSwift />,
+      onClick: () => window.open('https://github.com/Selfdb-io/selfdb-ios', '_blank', 'noopener,noreferrer'),
+      badgeLabel: 'v0.04',
+      badgeStatus: 'pending' as const
     },
     {
-      id: 3,
-      title: 'Function deployed',
-      description: 'Deployed new authentication function',
-      timestamp: 'Yesterday',
-      icon: <FunctionIcon className="w-5 h-5 text-secondary-600 dark:text-secondary-300" />
+      id: 'js-sdk',
+      title: 'JavaScript SDK',
+      description: 'React/Node.js client library',
+      icon: <FaReact />,
+      onClick: () => window.open('https://github.com/Selfdb-io/js-sdk', '_blank', 'noopener,noreferrer'),
+      badgeLabel: 'v0.04',
+      badgeStatus: 'pending' as const
     },
     {
-      id: 4,
-      title: 'Database created',
-      description: 'Created new analytics database',
-      timestamp: '3 days ago',
-      icon: <DatabaseIcon className="w-5 h-5 text-secondary-600 dark:text-secondary-300" />
+      id: 'python-sdk',
+      title: 'Python SDK',
+      description: 'Python client library',
+      icon: <FaPython />,
+      onClick: () => window.open('https://github.com/Selfdb-io/selfdb-py', '_blank', 'noopener,noreferrer'),
+      badgeLabel: 'v0.04',
+      badgeStatus: 'pending' as const
     }
   ];
 
@@ -286,9 +312,16 @@ const Dashboard: React.FC = () => {
           buttons={actionButtons}
         />
 
+        {/* Client libraries section */}
+        <ActionButtonGroup
+          title="Client Libraries"
+          buttons={clientLibrariesButtons}
+          columns={4}
+        />
+
         {/* Recent activity section */}
         <ActivitySection
-          title="Recent Activity"
+          title="Live Activity"
           activities={activities}
         />
       </div>

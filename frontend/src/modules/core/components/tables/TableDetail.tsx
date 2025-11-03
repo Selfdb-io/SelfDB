@@ -65,7 +65,7 @@ const TableDetail: React.FC = () => {
 
     // --- Real-time subscription for specific table updates ---
     if (!tableName) return;
-    const subscriptionId = `${tableName}_changes`;
+    const subscriptionId = `tables_events`;
     // Subscribe to specific table changes
     realtimeService.subscribe(subscriptionId);
 
@@ -73,8 +73,17 @@ const TableDetail: React.FC = () => {
     const handleTableUpdate = (data: any) => {
       console.log('Received table update via WebSocket:', data);
       
+      // Parse the payload to get the actual table name that changed
+      const changedTableName = data.new_data?.name || data.old_data?.name;
+      
+      // Only process updates for the current table we're viewing
+      if (changedTableName !== tableName) {
+        console.log(`Ignoring update for table '${changedTableName}' (currently viewing '${tableName}')`);
+        return;
+      }
+      
       // If the operation is DELETE and it's for the current table, navigate back to tables list
-      if (data.operation === 'DELETE' && data.table === tableName) {
+      if (data.action === 'DELETE') {
         console.log('Current table was deleted, navigating back to tables list');
         // Unsubscribe from this table's notifications before navigating away
         if (subscriptionId) {
@@ -84,11 +93,11 @@ const TableDetail: React.FC = () => {
         return;
       }
       
-      // Update table metadata for other operations
+      // Update table metadata for other operations (INSERT, UPDATE)
       fetchTableDetails();
       
       // If we have data changes, trigger the TableData component to refresh
-      if (data.operation && ['INSERT', 'UPDATE'].includes(data.operation)) {
+      if (data.action && ['INSERT', 'UPDATE'].includes(data.action)) {
         // Use the tableDataRef to access the refresh method if available
         if (tableDataRef.current && typeof tableDataRef.current.refreshData === 'function') {
           console.log('Refreshing table data due to realtime update');
@@ -322,10 +331,10 @@ const TableDetail: React.FC = () => {
         </TabPanel>
 
         <TabPanel activeTab={activeTab} index={1}>
-          {tableInfo && tableInfo.columns && (
+          {tableInfo && tableInfo.schema?.columns && (
             <TableStructure 
-              columns={tableInfo.columns} 
-              primaryKeys={tableInfo.primary_keys || []}
+              columns={tableInfo.schema.columns} 
+              primaryKeys={[]}
               tableName={tableName}
               tableDescription={tableInfo.description}
               onStructureChange={() => {
@@ -352,7 +361,7 @@ const TableDetail: React.FC = () => {
           {tableInfo && (
             <TableRelationships 
               tableName={tableName}
-              foreignKeys={tableInfo.foreign_keys || []} 
+              foreignKeys={[]} 
             />
           )}
         </TabPanel>
@@ -361,7 +370,7 @@ const TableDetail: React.FC = () => {
           {tableInfo && (
             <TableIndexes 
               tableName={tableName}
-              indexes={tableInfo.indexes || []} 
+              indexes={tableInfo.schema?.indexes || []} 
             />
           )}
         </TabPanel>

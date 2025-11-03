@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { getUserBuckets, Bucket } from '../../../../services/bucketService';
+import { getUserBuckets, getBucketFiles, Bucket } from '../../../../services/bucketService';
 import { BucketList, BucketForm } from '../storage';
 import { Button } from '../../../../components/ui/button';
 import realtimeService from '../../../../services/realtimeService';
@@ -17,12 +17,12 @@ const Storage: React.FC = () => {
   useEffect(() => {
     fetchBuckets();
     
-    // Use correct channel name with _changes suffix
-    const bucketSubscriptionId = 'buckets_changes';
+    // Use Phoenix channel name from database triggers
+    const bucketSubscriptionId = 'buckets_events';
     realtimeService.subscribe(bucketSubscriptionId);
     
     // Also subscribe to file changes to update bucket sizes when files are added/deleted
-    const tableSubscriptionId = 'tables_changes';
+    const tableSubscriptionId = 'tables_events';
     realtimeService.subscribe(tableSubscriptionId);
     
     const handleBucketUpdate = (data: any) => {
@@ -53,7 +53,20 @@ const Storage: React.FC = () => {
     try {
       setLoading(true);
       const data = await getUserBuckets();
-      setBuckets(data);
+      // Enrich buckets with live file counts and total sizes
+      const enriched = await Promise.all(
+        data.map(async (b) => {
+          try {
+            const files = await getBucketFiles(b.name);
+            const count = files.length;
+            const size = files.reduce((sum, f) => sum + (f.size ?? 0), 0);
+            return { ...b, file_count: count, total_size: size } as Bucket;
+          } catch {
+            return { ...b, file_count: 0, total_size: 0 } as Bucket;
+          }
+        })
+      );
+      setBuckets(enriched);
       setError(null);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load buckets');

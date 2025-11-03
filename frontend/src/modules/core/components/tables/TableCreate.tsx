@@ -23,7 +23,7 @@ const TableCreate: React.FC<TableCreateProps> = ({ isOpen, onClose, onTableCreat
   const [tableName, setTableName] = useState('');
   const [description, setDescription] = useState('');
   const [columns, setColumns] = useState<ColumnDefinition[]>([
-    { name: 'id', type: 'INTEGER', nullable: false, primaryKey: true },
+    { name: 'id', type: 'uuid', nullable: false, primaryKey: true },
   ]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +32,7 @@ const TableCreate: React.FC<TableCreateProps> = ({ isOpen, onClose, onTableCreat
     setTableName('');
     setDescription('');
     setColumns([
-      { name: 'id', type: 'INTEGER', nullable: false, primaryKey: true },
+      { name: 'id', type: 'uuid', nullable: false, primaryKey: true },
     ]);
     setError(null);
   };
@@ -62,12 +62,14 @@ const TableCreate: React.FC<TableCreateProps> = ({ isOpen, onClose, onTableCreat
       await createTable({
         name: tableName,
         description,
-        columns: columns.map(col => ({
-          name: col.name,
-          type: col.type,
-          nullable: col.nullable,
-          primary_key: col.primaryKey
-        }))
+        schema: {
+          columns: columns.map(col => ({
+            name: col.name,
+            type: col.type,
+            nullable: col.nullable,
+            primary_key: col.primaryKey
+          }))
+        }
       });
       
       handleClose();
@@ -85,7 +87,7 @@ const TableCreate: React.FC<TableCreateProps> = ({ isOpen, onClose, onTableCreat
   const addColumn = () => {
     setColumns([
       ...columns,
-      { name: '', type: 'TEXT', nullable: true, primaryKey: false }
+      { name: '', type: 'text', nullable: true, primaryKey: false }
     ]);
   };
 

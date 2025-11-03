@@ -1,13 +1,23 @@
 {
-  "name": "new-frontent",
-  "private": true,
-  "version": "0.0.0",
+  "name": "selfdb-frontend",
+  "version": "0.1.0-test",
+  "description": "SelfDB Frontend with React UI served by nginx",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --mode development",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "cypress": "cypress open",
+    "cypress:headless": "cypress run",
+    "cypress:dev": "CYPRESS_BASE_URL=http://localhost:5173 cypress open",
+    "test:e2e": "cypress run",
+    "test:e2e:dev": "CYPRESS_BASE_URL=http://localhost:5173 cypress run",
+    "test:e2e:open": "cypress open"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.2",
@@ -30,23 +40,32 @@
     "react-dom": "^19.0.0",
     "react-dropzone": "^14.3.8",
     "react-icons": "^5.5.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.5.3",
     "tailwind-merge": "^3.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/user-event": "^14.5.2",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^2.1.8",
+    "@vitest/ui": "^2.1.8",
     "autoprefixer": "^10.4.16",
+    "cypress": "^13.17.0",
     "eslint": "^9.22.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
+    "jsdom": "^25.0.1",
     "postcss": "^8.4.31",
     "tailwindcss": "^3.3.0",
     "typescript": "~5.7.2",
     "typescript-eslint": "^8.26.1",
-    "vite": "^6.3.1"
+    "vite": "^6.3.1",
+    "vitest": "^2.1.8"
   }
 }

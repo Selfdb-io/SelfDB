@@ -1,6 +1,8 @@
-import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
-import { loginUser, registerUser, getCurrentUser, User, LoginResponse } from '../services/authService';
+import React, { createContext, useState, useEffect, useContext } from 'react';
+import { loginUser, registerUser, getCurrentUser, logoutUser, User, LoginResponse } from '../services/authService';
+import { parseBackendError } from '../../../utils/errorParser';
 import realtimeService from '../../../services/realtimeService';
+import { startTokenRefreshManager, stopTokenRefreshManager } from '../../../utils/tokenRefreshManager';
 
 // Define the shape of the context
 interface AuthContextType {
@@ -8,8 +10,8 @@ interface AuthContextType {
   loading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<User>;
-  register: (email: string, password: string) => Promise<User>;
-  logout: () => void;
+  register: (email: string, password: string, firstName: string, lastName: string) => Promise<User>;
+  logout: () => Promise<void>;
   isAuthenticated: boolean;
   wsConnected: boolean;
 }
@@ -25,14 +27,14 @@ const AuthContext = createContext<AuthContextType>({
   register: async () => {
     throw new Error('register function not implemented');
   },
-  logout: () => {},
+  logout: async () => {},
   isAuthenticated: false,
   wsConnected: false,
 });
 
 // Props for the provider component
 interface AuthProviderProps {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 // Custom hook to use the auth context
@@ -45,23 +47,111 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [error, setError] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
 
-  // Function to establish WebSocket connection
+  // Function to establish WebSocket connection and start token refresh manager
   const setupWebSocket = (user: User) => {
     if (!user) return;
-    
+
     const token = localStorage.getItem('token');
     if (!token) return;
-    
+
     // Connect to WebSocket if not already connected
     if (!wsConnected) {
       realtimeService.connect(token);
-      
+
       // Subscribe to user-specific updates
       realtimeService.subscribe(`user:${user.id}`, {
-        userId: user.id
+        resource_type: 'users',
+        resource_id: user.id,
+        filters: {}
       });
-      
+
       setWsConnected(true);
+    }
+
+    // Start proactive token refresh manager to keep user logged in
+    startTokenRefreshManager();
+  };
+
+  // Login function
+  const login = async (email: string, password: string): Promise<User> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Login user and get tokens
+      const response: LoginResponse = await loginUser(email, password);
+
+      // Store tokens in localStorage
+      localStorage.setItem('token', response.access_token);
+      localStorage.setItem('refreshToken', response.refresh_token);
+
+      // User data comes from the response
+      const user = response.user;
+
+      // Verify the user is a superuser/admin
+      if (!user.is_active || user.role !== 'ADMIN') {
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
+        throw new Error('Access denied: Only active admin users can access the admin dashboard');
+      }
+
+      setCurrentUser(user);
+      setupWebSocket(user);
+
+      return user;
+    } catch (err) {
+      const parsedError = parseBackendError(err);
+      setError(parsedError.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Register function
+  const register = async (email: string, password: string, firstName: string, lastName: string): Promise<User> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Register user
+      const response = await registerUser(email, password, firstName, lastName);
+      const user = response.user;
+
+      return user;
+    } catch (err) {
+      const parsedError = parseBackendError(err);
+      setError(parsedError.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Logout function
+  const logout = async (): Promise<void> => {
+    try {
+      const accessToken = localStorage.getItem('token');
+      const refreshToken = localStorage.getItem('refreshToken');
+
+      // Stop token refresh manager
+      stopTokenRefreshManager();
+
+      // Call backend logout endpoint
+      await logoutUser(accessToken || undefined, refreshToken || undefined);
+    } catch (err) {
+      console.error('Error during logout:', err);
+      // Continue with local cleanup even if backend call fails
+    } finally {
+      // Clean up local state
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      setCurrentUser(null);
+      setError(null);
+
+      // Disconnect WebSocket
+      realtimeService.disconnect();
+      setWsConnected(false);
     }
   };
 
@@ -77,107 +167,50 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const user = await getCurrentUser();
             console.log('User authenticated successfully:', user);
 
-            // Verify the user is a superuser
-            if (!user.is_superuser) {
-              console.error('Access denied: Only superusers can access the admin dashboard');
+            // Verify the user is active and admin
+            if (!user.is_active || user.role !== 'ADMIN') {
+              console.error('Access denied: Only active admin users can access the admin dashboard');
               localStorage.removeItem('token');
               localStorage.removeItem('refreshToken');
-              setError('Access denied: Only superusers can access the admin dashboard');
+              stopTokenRefreshManager();
+              setError('Access denied: Only active admin users can access the admin dashboard');
               setCurrentUser(null);
             } else {
               setCurrentUser(user);
-              // Setup WebSocket connection after authentication
+              // Setup WebSocket connection and token refresh manager after authentication
               setupWebSocket(user);
             }
           } catch (authErr) {
             console.error('Error validating token:', authErr);
-            // Error handling is now done in the API interceptor which will attempt
-            // to refresh the token automatically if it's expired
+            // Clear local state when token validation fails
+            localStorage.removeItem('token');
+            localStorage.removeItem('refreshToken');
+            stopTokenRefreshManager();
+            setCurrentUser(null);
+            setError('Authentication failed. Please log in again.');
+            // API interceptor will handle redirect if needed
           }
         } else {
           console.log('No authentication token found');
         }
       } catch (err) {
-        console.error('Error in authentication check:', err);
-        // Clear tokens
-        localStorage.removeItem('token');
-        localStorage.removeItem('refreshToken');
+        console.error('Error checking logged in status:', err);
+        setError('Failed to check authentication status');
       } finally {
         setLoading(false);
       }
     };
 
     checkLoggedIn();
-    
-    // Cleanup WebSocket on app unmount
+
+    // Cleanup on unmount
     return () => {
-      realtimeService.disconnect();
-      setWsConnected(false);
+      stopTokenRefreshManager();
     };
   }, []);
 
-  // Login function
-  const login = async (email: string, password: string): Promise<User> => {
-    try {
-      setError(null);
-      console.log('Attempting login for:', email);
-
-      const { access_token, refresh_token, is_superuser }: LoginResponse = await loginUser(email, password);
-      console.log('Login successful, tokens received');
-
-      // Check if user is a superuser - only allow superusers to access the frontend
-      if (!is_superuser) {
-        console.error('Access denied: Only superusers can access the admin dashboard');
-        setError('Access denied: Only superusers can access the admin dashboard');
-        throw new Error('Access denied: Only superusers can access the admin dashboard');
-      }
-
-      // Store the tokens
-      localStorage.setItem('token', access_token);
-      localStorage.setItem('refreshToken', refresh_token);
-      console.log('Tokens stored in localStorage');
-
-      // Get user info with the new token
-      const user = await getCurrentUser();
-      console.log('User info retrieved:', user);
-
-      setCurrentUser(user);
-      
-      // Setup WebSocket connection after login
-      setupWebSocket(user);
-      
-      return user;
-    } catch (err: any) {
-      console.error('Login error:', err);
-      setError(err.response?.data?.detail || err.message || 'Login failed');
-      throw err;
-    }
-  };
-
-  // Register function
-  const register = async (email: string, password: string): Promise<User> => {
-    try {
-      setError(null);
-      const user = await registerUser(email, password);
-      return user;
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Registration failed');
-      throw err;
-    }
-  };
-
-  // Logout function
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-    setCurrentUser(null);
-    // Disconnect WebSocket on logout
-    realtimeService.disconnect();
-    setWsConnected(false);
-  };
-
-  // Context value
-  const value: AuthContextType = {
+  // Context values
+  const contextValue: AuthContextType = {
     currentUser,
     loading,
     error,
@@ -189,8 +222,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
-}; 
+};

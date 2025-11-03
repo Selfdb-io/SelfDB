@@ -1,37 +1,36 @@
 # --- Stage 1: Build ---
-# Use an official Node.js runtime as the build environment
-FROM node:slim AS build
+ARG APP_VERSION=""
 
-# Set the working directory inside the build stage container
+FROM node:20-alpine AS build
+ARG APP_VERSION
+ENV VITE_APP_VERSION=${APP_VERSION}
+
 WORKDIR /app
 
-# Copy package.json and package-lock.json (or yarn.lock)
-# Copy these first to leverage Docker layer caching for dependencies
+# Copy package files first for caching
 COPY package*.json ./
-
-# Install dependencies using npm install
 RUN npm install
 
-# Copy the rest of the application source code
+# Copy application source
 COPY . .
 
-# Build the React application for production.
-# This creates optimized static files in the /app/dist directory.
+# Build React application
 RUN npm run build
 
 # --- Stage 2: Serve ---
-# Use an official Nginx image based on Alpine Linux for a small footprint
 FROM nginx:1.27-alpine-slim
+ARG APP_VERSION
+ENV SELFDB_BUILD_VERSION=${APP_VERSION}
 
-# Copy the static build output from the 'build' stage to Nginx's web root directory
+# Copy built React app from build stage
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy the custom Nginx configuration file tailored for production
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy nginx configuration template
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 
-# Expose port 80 (standard HTTP port Nginx listens on by default)
+# Expose port 80 (nginx default)
 EXPOSE 80
 
-# Command to start Nginx in the foreground
-# Keeps the container running
+# nginx will automatically substitute environment variables in .template files
+# and start in the foreground
 CMD ["nginx", "-g", "daemon off;"]

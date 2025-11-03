@@ -52,11 +52,12 @@ const sqlService = {
       const response = await api.post('/sql/query', { query });
       return response.data;
     } catch (error: any) {
-      // If the API returns an error message, use it
+      if (error.response?.data?.detail) {
+        throw new Error(error.response.data.detail);
+      }
       if (error.response?.data?.error) {
         throw new Error(error.response.data.error);
       }
-      // Otherwise use the generic error message
       throw new Error(error.message || 'Error executing query');
     }
   },
@@ -64,17 +65,11 @@ const sqlService = {
   // Save query to history
   saveQueryToHistory: async (
     query: string, 
-    isReadOnly: boolean, 
-    executionTime: number, 
-    rowCount: number, 
-    error: string | null = null
+    result: SqlQueryResult
   ): Promise<void> => {
     await api.post('/sql/history', {
       query,
-      is_read_only: isReadOnly,
-      execution_time: executionTime,
-      row_count: rowCount,
-      error
+      result
     });
   },
 

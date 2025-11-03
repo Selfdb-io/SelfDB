@@ -2,6 +2,7 @@ import { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './modules/auth/context/AuthContext';
 import { ThemeProvider } from './modules/core/context/ThemeContext';
+import { ActivityFeedProvider } from './modules/core/context/ActivityFeedContext';
 import { MainLayout } from './modules/core/components/MainLayout';
 import { FunctionDetail } from './modules/core/components/functions';
 import { Loader } from './modules/core/components/ui/Loader';
@@ -19,6 +20,7 @@ const BucketDetail = lazy(() => import('./modules/core/components/storage/Bucket
 const SqlEditor = lazy(() => import('./modules/core/components/pages/SqlEditor'));
 const Functions = lazy(() => import('./modules/core/components/pages/Functions'));
 const Schemas = lazy(() => import('./modules/core/components/pages/Schemas'));
+const ApiReference = lazy(() => import('./modules/core/components/pages/ApiReference'));
 
 // ProtectedRoute component that checks authentication
 const ProtectedRoute = () => {
@@ -51,6 +53,16 @@ const MainLayoutWrapper = () => (
     </MainLayout>
   </Suspense>
 );
+
+// Lazy-loaded WebhookDetail wrapped to satisfy Route element typing
+const WebhookDetailLazy = () => {
+  const Comp = lazy(() => import('./modules/core/components/webhooks/WebhookDetail'));
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader size="large" /></div>}>
+      <Comp />
+    </Suspense>
+  );
+};
 
 // Check if user is authenticated and redirect to dashboard if they are
 const RedirectIfAuthenticated = () => {
@@ -92,7 +104,11 @@ function App() {
               
               {/* Protected routes with MainLayout */}
               <Route element={<ProtectedRoute />}>
-                <Route element={<MainLayoutWrapper />}>
+                <Route element={
+                  <ActivityFeedProvider>
+                    <MainLayoutWrapper />
+                  </ActivityFeedProvider>
+                }>
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/auth" element={<Auth />} />
@@ -108,8 +124,13 @@ function App() {
                   
                   <Route path="/sql-editor" element={<SqlEditor />} />
                   <Route path="/functions" element={<Functions />} />
-                  <Route path="/functions/:functionId" element={<FunctionDetail />} />
+                  <Route path="/functions/:functionId" element={<FunctionDetail />}
+                    />
+                  {/* Webhooks detail route: support both top-level and nested under functions */}
+                  <Route path="/webhooks/:webhookId" element={<WebhookDetailLazy />} />
+                  <Route path="/functions/:functionId/webhooks/:webhookId" element={<WebhookDetailLazy />} />
                   <Route path="/schemas" element={<Schemas />} />
+                  <Route path="/api-reference" element={<ApiReference />} />
                 </Route>
               </Route>
               

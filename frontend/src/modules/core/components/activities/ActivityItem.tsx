@@ -1,14 +1,14 @@
 import React from 'react';
 
 interface ActivityItemProps {
-  title: string;
+  title?: string;
   description: string;
   timestamp: string;
   icon?: React.ReactNode;
 }
 
 export const ActivityItem: React.FC<ActivityItemProps> = ({
-  title,
+  title: _title,
   description,
   timestamp,
   icon = (
@@ -23,8 +23,7 @@ export const ActivityItem: React.FC<ActivityItemProps> = ({
         {icon}
       </div>
       <div>
-        <h3 className="text-lg font-medium text-secondary-800 dark:text-white">{title}</h3>
-        <p className="text-sm text-secondary-500 dark:text-secondary-400">{description}</p>
+        <p className="text-sm text-secondary-500 dark:text-secondary-400 leading-5">{description}</p>
         <p className="text-xs text-secondary-400 dark:text-secondary-500 mt-1">{timestamp}</p>
       </div>
     </div>

@@ -21,6 +21,14 @@ const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Live validation flags
+  const lengthOk = newPassword.length >= 8;
+  const upperOk = /[A-Z]/.test(newPassword);
+  const lowerOk = /[a-z]/.test(newPassword);
+  const digitOk = /\d/.test(newPassword);
+  const specialOk = /[!@#$%^&*(),.?":{}|<>]/.test(newPassword);
+  const matchOk = newPassword === confirmPassword && newPassword.length > 0;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -40,6 +48,23 @@ const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
       setError('Password must be at least 8 characters');
       return;
     }
+    // Match backend strength requirements: uppercase, lowercase, digit, special char
+    if (!/[A-Z]/.test(newPassword)) {
+      setError('Password must contain at least one uppercase letter');
+      return;
+    }
+    if (!/[a-z]/.test(newPassword)) {
+      setError('Password must contain at least one lowercase letter');
+      return;
+    }
+    if (!/\d/.test(newPassword)) {
+      setError('Password must contain at least one digit');
+      return;
+    }
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(newPassword)) {
+      setError('Password must contain at least one special character');
+      return;
+    }
     
     try {
       setIsLoading(true);
@@ -56,8 +81,29 @@ const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
       // Close modal and notify success
       onClose();
       onSuccess();
-    } catch (err) {
-      setError('Failed to change password. Please check your current password and try again.');
+    } catch (err: any) {
+      // Try to surface backend validation errors (FastAPI Pydantic errors are in response.data.detail)
+      const resp = err?.response?.data;
+      if (resp) {
+        // detail can be an array of errors or a string
+        if (Array.isArray(resp.detail)) {
+          // Map to readable message
+          const first = resp.detail[0];
+          if (first && first.msg) {
+            setError(first.msg);
+          } else {
+            setError(JSON.stringify(resp.detail));
+          }
+        } else if (typeof resp.detail === 'string') {
+          setError(resp.detail);
+        } else if (resp.message) {
+          setError(resp.message);
+        } else {
+          setError('Failed to change password. Please check your current password and try again.');
+        }
+      } else {
+        setError('Failed to change password. Please check your current password and try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -103,6 +149,30 @@ const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
           />
+        </div>
+        {/* Live password requirements checklist */}
+        <div className="mb-4 text-sm text-secondary-600 dark:text-secondary-400">
+          <p className="font-medium mb-2">Password must contain:</p>
+          <ul className="list-none space-y-1 pl-0">
+            <li className={`${lengthOk ? 'text-success-600 dark:text-success-400' : 'text-secondary-500 dark:text-secondary-400'}`}>
+              {lengthOk ? '✓' : '○'} At least 8 characters
+            </li>
+            <li className={`${upperOk ? 'text-success-600 dark:text-success-400' : 'text-secondary-500 dark:text-secondary-400'}`}>
+              {upperOk ? '✓' : '○'} At least one uppercase letter (A-Z)
+            </li>
+            <li className={`${lowerOk ? 'text-success-600 dark:text-success-400' : 'text-secondary-500 dark:text-secondary-400'}`}>
+              {lowerOk ? '✓' : '○'} At least one lowercase letter (a-z)
+            </li>
+            <li className={`${digitOk ? 'text-success-600 dark:text-success-400' : 'text-secondary-500 dark:text-secondary-400'}`}>
+              {digitOk ? '✓' : '○'} At least one number (0-9)
+            </li>
+            <li className={`${specialOk ? 'text-success-600 dark:text-success-400' : 'text-secondary-500 dark:text-secondary-400'}`}>
+              {specialOk ? '✓' : '○'} At least one special character (!@#$%^&*, etc.)
+            </li>
+            <li className={`${matchOk ? 'text-success-600 dark:text-success-400' : 'text-secondary-500 dark:text-secondary-400'}`}>
+              {matchOk ? '✓' : '○'} New password matches confirmation
+            </li>
+          </ul>
         </div>
         
         <div className="mb-4">

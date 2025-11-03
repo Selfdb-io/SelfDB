@@ -1,21 +1,20 @@
 import React from 'react';
-import { Table as TableData } from '../../../../services/tableService';
-import { formatBytes } from '../../utils/formatters';
-import { 
-  MoreVertical, 
-  Database 
+import { Table } from '../../../../services/tableService';
+import {
+  MoreVertical,
+  Database
 } from 'lucide-react';
-import { Table, TableHeader } from '../../../../components/ui/table';
+import { Table as TableComponent, TableHeader } from '../../../../components/ui/table';
 
 interface TableListProps {
-  tables: TableData[];
+  tables: Table[];
   onTableClick: (tableName: string) => void;
   onTableDeleted?: (tableName: string) => void;
 }
 
 // Create an interface for the formatted table data
-interface FormattedTableData extends Omit<TableData, 'size' | 'description'> {
-  size: string;
+interface FormattedTableData extends Omit<Table, 'schema' | 'description'> {
+  column_count: number;
   description: string | React.ReactNode | undefined;
 }
 
@@ -24,13 +23,13 @@ const TableList: React.FC<TableListProps> = ({ tables, onTableClick }) => {
     { key: 'name', label: 'Table Name' },
     { key: 'description', label: 'Description' },
     { key: 'column_count', label: 'Columns', isNumeric: true },
-    { key: 'size', label: 'Size', isNumeric: true },
+    { key: 'row_count', label: 'Rows', isNumeric: true },
   ];
 
   // Format table data for the reusable Table component
   const formattedData: FormattedTableData[] = tables.map(table => ({
     ...table,
-    size: formatBytes(table.size),
+    column_count: table.schema?.columns?.length || 0,
     description: table.description || (
       <span className="italic text-secondary-400 dark:text-secondary-500">
         No description
@@ -78,7 +77,7 @@ const TableList: React.FC<TableListProps> = ({ tables, onTableClick }) => {
       {tables.length === 0 ? (
         <EmptyState />
       ) : (
-        <Table
+        <TableComponent
           headers={tableHeaders}
           data={formattedData}
           renderRowIcon={renderRowIcon}

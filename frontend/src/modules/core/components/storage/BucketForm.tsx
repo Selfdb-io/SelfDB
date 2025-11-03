@@ -61,6 +61,35 @@ const BucketForm: React.FC<BucketFormProps> = ({
   const [isPublic, setIsPublic] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  // Bucket name validation pattern
+  const bucketNamePattern = /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/;
+  
+  const validateBucketName = (value: string): string | null => {
+    if (!value) {
+      return 'Bucket name is required';
+    }
+    if (value.length < 2) {
+      return 'Bucket name must be at least 2 characters long';
+    }
+    if (!bucketNamePattern.test(value)) {
+      if (/[A-Z]/.test(value)) {
+        return 'Bucket name cannot contain uppercase letters';
+      }
+      if (/[^a-z0-9.-]/.test(value)) {
+        return 'Bucket name can only contain lowercase letters, numbers, dots (.), and hyphens (-)';
+      }
+      if (!/^[a-z0-9]/.test(value)) {
+        return 'Bucket name must start with a lowercase letter or number';
+      }
+      if (!/[a-z0-9]$/.test(value)) {
+        return 'Bucket name must end with a lowercase letter or number';
+      }
+      return 'Invalid bucket name format';
+    }
+    return null;
+  };
 
   // Reset form when modal opens/closes or editBucket changes
   useEffect(() => {
@@ -76,11 +105,33 @@ const BucketForm: React.FC<BucketFormProps> = ({
         setIsPublic(false);
       }
       setError(null);
+      setNameError(null);
     }
   }, [isOpen, editBucket]);
 
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setName(value);
+    
+    // Only validate if the user has typed something
+    if (value) {
+      const error = validateBucketName(value);
+      setNameError(error);
+    } else {
+      setNameError(null);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate name before submission
+    const validationError = validateBucketName(name);
+    if (validationError) {
+      setNameError(validationError);
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     
@@ -128,11 +179,19 @@ const BucketForm: React.FC<BucketFormProps> = ({
             id="name"
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={handleNameChange}
             required
             placeholder="e.g., profile-images, documents, backups"
-            className="mt-1"
+            className={`mt-1 ${nameError ? 'border-error-500 focus:ring-error-500' : ''}`}
           />
+          {nameError && (
+            <p className="mt-1 text-sm text-error-600 dark:text-error-400">
+              {nameError}
+            </p>
+          )}
+          <p className="mt-1 text-xs text-secondary-500 dark:text-secondary-400">
+            Must start and end with a lowercase letter or number. Can contain lowercase letters, numbers, dots (.), and hyphens (-).
+          </p>
         </div>
         
         <div>
@@ -167,7 +226,7 @@ const BucketForm: React.FC<BucketFormProps> = ({
           </Button>
           <Button
             type="submit"
-            disabled={loading}
+            disabled={loading || !!nameError}
             className={loading ? 'opacity-70' : ''}
           >
             {loading ? (
@@ -185,4 +244,4 @@ const BucketForm: React.FC<BucketFormProps> = ({
   );
 };
 
-export default BucketForm; 
+export default BucketForm;

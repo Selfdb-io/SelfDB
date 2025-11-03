@@ -5,6 +5,9 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { delay } from "https://deno.land/std@0.224.0/async/delay.ts";
 import postgres from "https://deno.land/x/postgresjs@v3.4.5/mod.js";
 
+// Generate UUID for execution tracking
+const generateUUID = () => crypto.randomUUID();
+
 // Simple EventEmitter implementation
 class EventEmitter {
   #events = new Map();
@@ -65,7 +68,12 @@ type OneTimeTrigger = {
   condition?: string; // Optional condition to determine if it should run
 };
 
-type Trigger = HttpTrigger | ScheduleTrigger | DatabaseTrigger | EventTrigger | OneTimeTrigger;
+type WebhookTrigger = {
+  type: "webhook";
+  method?: string; // GET, POST, PUT, DELETE, etc.
+};
+
+type Trigger = HttpTrigger | ScheduleTrigger | DatabaseTrigger | EventTrigger | OneTimeTrigger | WebhookTrigger;
 
 // Function execution status
 type ExecutionStatus = {
@@ -86,6 +94,7 @@ interface FunctionMetadata {
   filePath: string;
   status: ExecutionStatus;
   runOnce?: boolean; // If true, function will only run once successfully and then be marked as completed
+  env_vars?: Record<string, string>; // Environment variables for the function
 }
 
 // Registry for all functions
@@ -105,18 +114,18 @@ const dbListeners: Map<string, boolean> = new Map();
 const corsHeaders = {
   "Access-Control-Allow-Origin": "http://localhost:3000",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-api-key",
   "Access-Control-Max-Age": "86400",
 };
 
 // Backend API client helper
-const BACKEND_URL = Deno.env.get("BACKEND_URL") || "http://backend:8000/api/v1";
-const ANON_KEY = Deno.env.get("ANON_KEY") || "";
+const BACKEND_URL = Deno.env.get("BACKEND_URL");
+const API_KEY = Deno.env.get("API_KEY");
 
 async function callBackend(path, options = {}) {
   const url = path.startsWith("http") ? path : `${BACKEND_URL}${path.startsWith("/") ? path : "/" + path}`;
   const headers = new Headers(options.headers || {});
-  headers.set("apikey", ANON_KEY);
+  headers.set("x-api-key", API_KEY);
   if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const resp = await fetch(url, { ...options, headers });
   const text = await resp.text();
@@ -184,8 +193,20 @@ async function loadFunction(filePath: string): Promise<FunctionMetadata | null> 
       path: httpPath,
       filePath: filePath,
       status: executionStatus, // Use status that respects previous completion for runOnce
-      runOnce: module.runOnce === true
+      runOnce: module.runOnce === true,
+      env_vars: undefined // Will be loaded below
     };
+
+    // Load environment variables if they exist
+    const envFilePath = filePath.replace(/\.ts$/, '.env.json');
+    try {
+      const envData = await Deno.readTextFile(envFilePath);
+      metadata.env_vars = JSON.parse(envData);
+      console.log(`Loaded env vars for function: ${functionName}`);
+    } catch {
+      // No env file or invalid JSON - that's OK, env_vars remains undefined
+      console.log(`No env vars file found for function: ${functionName}`);
+    }
 
     // If no triggers are defined, add default HTTP trigger
     if (!metadata.triggers || metadata.triggers.length === 0) {
@@ -296,11 +317,11 @@ async function setupDatabaseConnection() {
 
   try {
     sql = postgres({
-      user: Deno.env.get("POSTGRES_USER") || "postgres",
-      password: Deno.env.get("POSTGRES_PASSWORD") || "postgres",
-      database: Deno.env.get("POSTGRES_DB") || "postgres",
-      host: Deno.env.get("POSTGRES_HOST") || "postgres",
-      port: parseInt(Deno.env.get("POSTGRES_PORT") || "5432"),
+      user: Deno.env.get("POSTGRES_USER"),
+      password: Deno.env.get("POSTGRES_PASSWORD"),
+      database: Deno.env.get("POSTGRES_DB"),
+      host: Deno.env.get("POSTGRES_HOST"),
+      port: parseInt(Deno.env.get("POSTGRES_PORT")),
       onnotice: (notice) => {
         console.log("PostgreSQL notice:", notice);
       }
@@ -491,25 +512,44 @@ async function handleDatabaseNotification(channel: string, payload: string) {
             }
           }
 
+          // Generate execution tracking IDs
+          const execution_id = generateUUID();
+          const delivery_id = generateUUID();
+          const startTime = performance.now();
+
           // Create a mock request for the handler
           const mockRequest = {
             method: "POST",
             headers: new Headers({
               "Content-Type": "application/json",
               "X-Trigger-Type": "database",
-              "X-Database-Channel": channel
+              "X-Database-Channel": channel,
+              "x-execution-id": execution_id,
+              "x-delivery-id": delivery_id
             }),
             json: () => Promise.resolve(payloadObj)
           };
 
           // Execute the function
-          const result = await fn.handler(mockRequest, { env: Deno.env.toObject(), callBackend });
+          const result = await fn.handler(mockRequest, { env: fn.env_vars || {}, callBackend });
+          const executionTime = performance.now() - startTime;
+          
           console.log(`Database trigger function ${name} completed with result:`, result);
 
           // Update function status
           fn.status.lastRun = new Date();
           fn.status.runCount++;
           fn.status.lastResult = result;
+
+          // Report execution result to Backend
+          await reportExecutionResult(
+            execution_id,
+            name,
+            true,
+            result,
+            [`[INFO] Database trigger executed successfully in ${executionTime.toFixed(2)}ms`],
+            executionTime
+          );
 
           // If this is a one-time function, mark as completed only if successful
           if (fn.runOnce && result && result.success === true) {
@@ -518,8 +558,22 @@ async function handleDatabaseNotification(channel: string, payload: string) {
             console.log(`One-time database-triggered function ${name} has completed successfully and will not run again`);
           }
         } catch (err) {
+          const executionTime = performance.now() - startTime;
+          
           console.error(`Error in database trigger function ${name}:`, err);
           fn.status.error = err.message;
+          fn.status.lastRun = new Date();
+          fn.status.runCount++;
+
+          // Report execution failure to Backend
+          await reportExecutionResult(
+            execution_id,
+            name,
+            false,
+            { error: fn.status.error },
+            [`[ERROR] Database trigger failed: ${fn.status.error}`],
+            executionTime
+          );
         }
       }
     }
@@ -534,6 +588,11 @@ async function executeEventFunction(fn: FunctionMetadata, eventName: string, eve
     return { success: true, message: "One-time function already completed." };
   }
 
+  // Generate execution tracking IDs
+  const execution_id = generateUUID();
+  const delivery_id = generateUUID();
+  const startTime = performance.now();
+
   try {
     // Create a mock request for the handler
     const mockRequest = {
@@ -541,19 +600,34 @@ async function executeEventFunction(fn: FunctionMetadata, eventName: string, eve
       headers: new Headers({
         "Content-Type": "application/json",
         "X-Trigger-Type": "event",
-        "X-Event-Name": eventName
+        "X-Event-Name": eventName,
+        "x-execution-id": execution_id,
+        "x-delivery-id": delivery_id
       }),
       json: () => Promise.resolve(eventData)
     };
 
     // Execute the function
-    const result = await fn.handler(mockRequest, { env: Deno.env.toObject(), callBackend });
+    const result = await fn.handler(mockRequest, { env: fn.env_vars || {}, callBackend });
+    const executionTime = performance.now() - startTime;
+    
     console.log(`Event function ${fn.name} completed with result:`, result);
 
     // Update function status
     fn.status.lastRun = new Date();
     fn.status.runCount++;
     fn.status.lastResult = result;
+
+    // Report execution result to Backend
+    await reportExecutionResult(
+      execution_id,
+      delivery_id,
+      fn.name,
+      true,
+      result,
+      [`[INFO] Event trigger executed successfully in ${executionTime.toFixed(2)}ms`],
+      executionTime
+    );
 
     // If this is a one-time function, mark as completed only if successful
     if (fn.runOnce && result && result.success === true) {
@@ -564,8 +638,24 @@ async function executeEventFunction(fn: FunctionMetadata, eventName: string, eve
 
     return result;
   } catch (err) {
+    const executionTime = performance.now() - startTime;
+    
     console.error(`Error in event function ${fn.name}:`, err);
     fn.status.error = err.message;
+    fn.status.lastRun = new Date();
+    fn.status.runCount++;
+
+    // Report execution failure to Backend
+    await reportExecutionResult(
+      execution_id,
+      delivery_id,
+      fn.name,
+      false,
+      { error: fn.status.error },
+      [`[ERROR] Event trigger failed: ${fn.status.error}`],
+      executionTime
+    );
+
     throw err;
   }
 }
@@ -578,24 +668,43 @@ async function executeOneTimeFunction(fn: FunctionMetadata) {
     return { success: true, message: "Already completed" }; // Provide a consistent return
   }
 
+  // Generate execution tracking IDs
+  const execution_id = generateUUID();
+  const delivery_id = generateUUID();
+  const startTime = performance.now();
+
   try {
     // Create a mock request for the handler
     const mockRequest = {
       method: "POST",
       headers: new Headers({
         "Content-Type": "application/json",
-        "X-Trigger-Type": "once"
+        "X-Trigger-Type": "once",
+        "x-execution-id": execution_id,
+        "x-delivery-id": delivery_id
       })
     };
 
     // Execute the function
-    const result = await fn.handler(mockRequest, { env: Deno.env.toObject(), callBackend });
+    const result = await fn.handler(mockRequest, { env: fn.env_vars || {}, callBackend });
+    const executionTime = performance.now() - startTime;
+    
     console.log(`One-time function ${fn.name} completed with result:`, result);
 
     // Update function status
     fn.status.lastRun = new Date();
     fn.status.runCount++;
     fn.status.lastResult = result;
+
+    // Report execution result to Backend
+    await reportExecutionResult(
+      execution_id,
+      fn.name,
+      true,
+      result,
+      [`[INFO] One-time function executed successfully in ${executionTime.toFixed(2)}ms`],
+      executionTime
+    );
 
     // Only mark as completed if the function was successful
     if (result && result.success === true) {
@@ -609,10 +718,23 @@ async function executeOneTimeFunction(fn: FunctionMetadata) {
 
     return result;
   } catch (err) {
+    const executionTime = performance.now() - startTime;
+    
     console.error(`Error in one-time function ${fn.name}:`, err);
     fn.status.error = err.message; // Update status with error
     fn.status.lastRun = new Date(); // Update last run even on error
     fn.status.runCount++; // Increment run count even on error
+
+    // Report execution failure to Backend
+    await reportExecutionResult(
+      execution_id,
+      fn.name,
+      false,
+      { error: fn.status.error },
+      [`[ERROR] One-time function failed: ${fn.status.error}`],
+      executionTime
+    );
+
     // Do not add to completedRunOnceFunctions on error
     throw err; // Re-throw to be caught by the caller in scanAndLoadFunctions if needed
   }
@@ -655,6 +777,192 @@ async function executeFunction(fn, req, context = {}) {
   });
 }
 
+// Execute webhook with log capture and result callback
+async function executeWebhook(
+  functionName: string,
+  fn: FunctionMetadata,
+  payload: any,
+  env_vars: Record<string, string>,
+  execution_id: string,
+  delivery_id: string
+) {
+  const startTime = performance.now();
+  let logs: string[] = [];
+  
+  // Capture console output
+  const originalLog = console.log;
+  const originalError = console.error;
+  const originalWarn = console.warn;
+  
+  try {
+    console.log = (...args: any[]) => {
+      const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+      logs.push(`[LOG] ${msg}`);
+      originalLog(...args);
+    };
+    
+    console.error = (...args: any[]) => {
+      const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+      logs.push(`[ERROR] ${msg}`);
+      originalError(...args);
+    };
+    
+    console.warn = (...args: any[]) => {
+      const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+      logs.push(`[WARN] ${msg}`);
+      originalWarn(...args);
+    };
+    
+    // Create webhook context with env_vars
+    const webhookContext = {
+      env: env_vars || {},
+      callBackend: async (method: string, path: string, data?: any) => {
+        const backendUrl = Deno.env.get("BACKEND_URL") || "http://backend:8000";
+        const url = `${backendUrl}${path}`;
+        
+        try {
+          const response = await fetch(url, {
+            method,
+            headers: {
+              "Content-Type": "application/json",
+              "x-execution-id": execution_id,
+              "x-delivery-id": delivery_id,
+              "x-api-key": API_KEY
+            },
+            body: data ? JSON.stringify(data) : undefined
+          });
+          
+          return {
+            status: response.status,
+            data: await response.json().catch(() => ({}))
+          };
+        } catch (err) {
+          logs.push(`[ERROR] callBackend failed: ${err.message}`);
+          throw err;
+        }
+      }
+    };
+    
+    // Create mock webhook request
+    const webhookRequest = {
+      method: "POST",
+      url: new URL(`http://localhost:8090/webhook/${functionName}`),
+      headers: new Headers({
+        "Content-Type": "application/json",
+        "x-execution-id": execution_id,
+        "x-delivery-id": delivery_id
+      }),
+      json: async () => payload,
+      text: async () => JSON.stringify(payload)
+    };
+    
+    // Execute handler with timeout
+    const FUNCTION_TIMEOUT = parseInt(Deno.env.get("FUNCTION_TIMEOUT") || "30000");
+    
+    const result = await Promise.race([
+      fn.handler(webhookRequest, webhookContext),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Webhook execution timeout")), FUNCTION_TIMEOUT)
+      )
+    ]);
+    
+    const executionTime = performance.now() - startTime;
+    
+    // Update function status
+    fn.status.lastRun = new Date();
+    fn.status.runCount++;
+    fn.status.lastResult = result;
+    
+    logs.push(`[INFO] Webhook execution completed in ${executionTime.toFixed(2)}ms`);
+    
+    // Send execution result back to Backend
+    await reportExecutionResult(
+      execution_id,
+      functionName,
+      true,
+      result,
+      logs,
+      executionTime,
+      delivery_id
+    );
+    
+  } catch (error) {
+    const executionTime = performance.now() - startTime;
+    
+    fn.status.error = error instanceof Error ? error.message : String(error);
+    fn.status.lastRun = new Date();
+    fn.status.runCount++;
+    
+    logs.push(`[ERROR] Webhook failed: ${fn.status.error}`);
+    
+    // Report failure to Backend
+    await reportExecutionResult(
+      execution_id,
+      functionName,
+      false,
+      { error: fn.status.error },
+      logs,
+      executionTime,
+      delivery_id
+    );
+    
+  } finally {
+    // Restore console
+    console.log = originalLog;
+    console.error = originalError;
+    console.warn = originalWarn;
+  }
+}
+
+// Report execution result to Backend
+async function reportExecutionResult(
+  execution_id: string,
+  function_name: string,
+  success: boolean,
+  result: any,
+  logs: string[],
+  execution_time_ms: number,
+  delivery_id?: string
+) {
+  const backendUrl = Deno.env.get("BACKEND_URL") || "http://backend:8000";
+  
+  try {
+    const requestBody: any = {
+      execution_id,
+      function_name,
+      success,
+      result,
+      logs,
+      execution_time_ms,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Only include delivery_id if provided (for webhook executions)
+    if (delivery_id) {
+      requestBody.delivery_id = delivery_id;
+    }
+
+    const response = await fetch(`${backendUrl}/api/v1/functions/${function_name}/execution-result`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-execution-id": execution_id,
+        "x-api-key": API_KEY,
+        ...(delivery_id && { "x-delivery-id": delivery_id })
+      },
+      body: JSON.stringify(requestBody)
+    });
+    
+    if (!response.ok) {
+      console.error(`Failed to report execution result: HTTP ${response.status}`);
+    } else {
+      console.log(`Execution result reported for ${execution_id}`);
+    }
+  } catch (error) {
+    console.error(`Error reporting execution result: ${error.message}`);
+  }
+}
+
 // Start the scheduler
 async function startScheduler() {
   console.log("Starting scheduler...");
@@ -688,24 +996,43 @@ async function startScheduler() {
                 lastRunTimes.set(triggerKey, now);
                 scheduledCount++;
 
+                // Generate execution tracking IDs
+                const execution_id = generateUUID();
+                const delivery_id = generateUUID();
+                const startTime = performance.now();
+
                 // Create a mock request for the handler
                 const mockRequest = {
                   method: "POST",
                   headers: new Headers({
                     "Content-Type": "application/json",
-                    "X-Trigger-Type": "schedule"
+                    "X-Trigger-Type": "schedule",
+                    "x-execution-id": execution_id,
+                    "x-delivery-id": delivery_id
                   })
                 };
 
                 // Execute the function
                 try {
-                  const result = await fn.handler(mockRequest, { env: Deno.env.toObject(), callBackend });
+                  const result = await fn.handler(mockRequest, { env: fn.env_vars || {}, callBackend });
+                  const executionTime = performance.now() - startTime;
+                  
                   console.log(`Scheduled function ${name} completed with result:`, result);
 
                   // Update function status
                   fn.status.lastRun = now;
                   fn.status.runCount++;
                   fn.status.lastResult = result;
+
+                  // Report execution result to Backend
+                  await reportExecutionResult(
+                    execution_id,
+                    name,
+                    true,
+                    result,
+                    [`[INFO] Scheduled function executed successfully in ${executionTime.toFixed(2)}ms`],
+                    executionTime
+                  );
 
                   // If this is a one-time function, mark as completed only if successful
                   if (fn.runOnce && result && result.success === true) {
@@ -714,8 +1041,22 @@ async function startScheduler() {
                     console.log(`One-time scheduled function ${name} has completed successfully and will not run again`);
                   }
                 } catch (err) {
+                  const executionTime = performance.now() - startTime;
+                  
                   console.error(`Error in scheduled function ${name}:`, err);
                   fn.status.error = err.message;
+                  fn.status.lastRun = now;
+                  fn.status.runCount++;
+
+                  // Report execution failure to Backend
+                  await reportExecutionResult(
+                    execution_id,
+                    name,
+                    false,
+                    { error: fn.status.error },
+                    [`[ERROR] Scheduled function failed: ${fn.status.error}`],
+                    executionTime
+                  );
                 }
               }
             }
@@ -763,6 +1104,169 @@ async function handleRequest(req: Request): Promise<Response> {
     }), {
       headers: { "Content-Type": "application/json", ...corsHeaders }
     });
+  }
+
+  // Deployment endpoint - receives function code from Backend
+  if (path === "/deploy" && req.method === "POST") {
+    try {
+      console.log("Received deployment request");
+      const body = await req.json();
+      const { functionName, code, isActive, env } = body;
+      
+      if (!functionName || !code) {
+        return new Response(JSON.stringify({
+          error: "Missing functionName or code"
+        }), {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      }
+      
+      // Write function file to disk
+      const filePath = `./${functionName}.ts`;
+      const envFilePath = `./${functionName}.env.json`;
+      
+      try {
+        await Deno.writeTextFile(filePath, code);
+        console.log(`Deployed function: ${functionName} (${code.length} bytes)`);
+        
+        // Store environment variables if provided
+        if (env && Object.keys(env).length > 0) {
+          await Deno.writeTextFile(envFilePath, JSON.stringify(env, null, 2));
+          console.log(`Stored env vars for function: ${functionName}`);
+        } else {
+          // Remove env file if it exists and no env vars provided
+          try {
+            await Deno.remove(envFilePath);
+          } catch {
+            // Ignore if file doesn't exist
+          }
+        }
+      } catch (writeErr) {
+        console.error(`Failed to write function files for ${functionName}:`, writeErr);
+        return new Response(JSON.stringify({
+          error: "Failed to write function files",
+          message: writeErr instanceof Error ? writeErr.message : String(writeErr)
+        }), {
+          status: 500,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      }
+      
+      // Reload functions to pick up the new code
+      console.log(`Triggering function reload for ${functionName}`);
+      await scanAndLoadFunctions();
+      
+      return new Response(JSON.stringify({
+        success: true,
+        functionName,
+        message: `Function ${functionName} deployed successfully`
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders }
+      });
+      
+    } catch (error) {
+      console.error("Deployment error:", error);
+      return new Response(JSON.stringify({
+        error: "Deployment failed",
+        message: error instanceof Error ? error.message : String(error)
+      }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", ...corsHeaders }
+      });
+    }
+  }
+
+  // Undeploy endpoint - removes function from Deno
+  if (path.startsWith("/deploy/") && req.method === "DELETE") {
+    try {
+      const functionName = path.replace("/deploy/", "");
+      const filePath = `./${functionName}.ts`;
+      
+      console.log(`Undeploying function: ${functionName}`);
+      
+      try {
+        await Deno.remove(filePath);
+        console.log(`Removed function file: ${filePath}`);
+      } catch (removeErr) {
+        if (removeErr instanceof Deno.errors.NotFound) {
+          console.warn(`Function file not found: ${filePath}`);
+        } else {
+          throw removeErr;
+        }
+      }
+      
+      // Reload functions to unregister it
+      await scanAndLoadFunctions();
+      
+      return new Response(JSON.stringify({
+        success: true,
+        functionName,
+        message: `Function ${functionName} undeployed successfully`
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders }
+      });
+      
+    } catch (error) {
+      console.error("Undeploy error:", error);
+      return new Response(JSON.stringify({
+        error: "Undeploy failed",
+        message: error instanceof Error ? error.message : String(error)
+      }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", ...corsHeaders }
+      });
+    }
+  }
+
+  // Webhook trigger endpoint - receives webhook execution requests from Backend
+  if (path.startsWith("/webhook/") && req.method === "POST") {
+    try {
+      const functionName = path.replace("/webhook/", "");
+      const fn = functionRegistry.get(functionName);
+      
+      if (!fn) {
+        console.warn(`Function not found for webhook: ${functionName}`);
+        return new Response(JSON.stringify({
+          error: "Function not found",
+          functionName
+        }), {
+          status: 404,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      }
+      
+      const body = await req.json();
+      const { payload, env_vars, execution_id, delivery_id } = body;
+      
+      console.log(`Webhook triggered for ${functionName}: execution_id=${execution_id}, delivery_id=${delivery_id}`);
+      
+      // Start execution asynchronously (don't wait for completion)
+      executeWebhook(functionName, fn, payload, env_vars, execution_id, delivery_id);
+      
+      // Return immediately with queued status
+      return new Response(JSON.stringify({
+        success: true,
+        message: "Webhook queued for execution",
+        execution_id,
+        delivery_id
+      }), {
+        status: 202,
+        headers: { "Content-Type": "application/json", ...corsHeaders }
+      });
+      
+    } catch (error) {
+      console.error("Webhook trigger error:", error);
+      return new Response(JSON.stringify({
+        error: "Webhook execution failed",
+        message: error instanceof Error ? error.message : String(error)
+      }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", ...corsHeaders }
+      });
+    }
   }
 
   // List functions endpoint
@@ -952,8 +1456,38 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // Execute the function
+  const startTime = performance.now();
   try {
-    const response = await executeFunction(fn.handler, req, { env: Deno.env.toObject(), callBackend });
+    // Generate execution tracking IDs for HTTP functions too
+    const execution_id = generateUUID();
+    const delivery_id = generateUUID();
+
+    // Add execution headers to request
+    const enhancedReq = new Request(req.url, {
+      method: req.method,
+      headers: new Headers(req.headers),
+      body: req.body
+    });
+    enhancedReq.headers.set('x-execution-id', execution_id);
+    enhancedReq.headers.set('x-delivery-id', delivery_id);
+
+    const response = await executeFunction(fn.handler, enhancedReq, { env: fn.env_vars || {}, callBackend });
+    const executionTime = performance.now() - startTime;
+
+    // Update function status for HTTP functions
+    fn.status.lastRun = new Date();
+    fn.status.runCount++;
+    fn.status.lastResult = { status: response.status, statusText: response.statusText };
+
+    // Report execution result to Backend
+    await reportExecutionResult(
+      execution_id,
+      functionName,
+      response.status < 400, // Consider 2xx/3xx as success
+      { status: response.status, statusText: response.statusText },
+      [`[INFO] HTTP function executed successfully in ${executionTime.toFixed(2)}ms`],
+      executionTime
+    );
 
     // Add CORS headers to the response
     const headers = new Headers(response.headers);
@@ -967,7 +1501,29 @@ async function handleRequest(req: Request): Promise<Response> {
       headers
     });
   } catch (err) {
+    const executionTime = performance.now() - startTime;
+
     console.error(`Error executing function '${functionName}':`, err);
+
+    // Generate execution tracking IDs for failed executions too
+    const execution_id = generateUUID();
+    const delivery_id = generateUUID();
+
+    // Update function status for failed HTTP functions
+    fn.status.lastRun = new Date();
+    fn.status.runCount++;
+    fn.status.error = err.message;
+
+    // Report execution failure to Backend
+    await reportExecutionResult(
+      execution_id,
+      functionName,
+      false,
+      { error: err.message },
+      [`[ERROR] HTTP function failed: ${err.message}`],
+      executionTime
+    );
+
     return new Response(JSON.stringify({ error: "Internal server error", message: err.message }), {
       status: 500,
       headers: { "Content-Type": "application/json", ...corsHeaders }

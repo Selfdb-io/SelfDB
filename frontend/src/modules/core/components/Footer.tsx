@@ -2,7 +2,7 @@ import React from 'react';
 import { FaGithub } from "react-icons/fa";
 import { FaXTwitter } from "react-icons/fa6";
 import { FaBook } from "react-icons/fa";
-import { SWAGGER_DOCS_URL } from '../../../services/api';
+
 
 export const Footer: React.FC = () => {
   return (
@@ -18,7 +18,7 @@ export const Footer: React.FC = () => {
           <a href="https://x.com/selfdb_io" target="_blank" rel="noreferrer" className="text-secondary-500 hover:text-secondary-800 dark:text-secondary-400 dark:hover:text-white">
             <FaXTwitter className="w-4 h-4" />
           </a>
-          <a href={SWAGGER_DOCS_URL} target="_blank" rel="noreferrer" className="text-secondary-500 hover:text-secondary-800 dark:text-secondary-400 dark:hover:text-white flex items-center">
+          <a href="/docs" target="_blank" rel="noreferrer" className="text-secondary-500 hover:text-secondary-800 dark:text-secondary-400 dark:hover:text-white flex items-center">
             <FaBook className="w-4 h-4" />
             <span className="ml-1 text-xs">API</span>
           </a>

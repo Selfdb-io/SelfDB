@@ -7,6 +7,8 @@ import {
   SqlHistoryList,
   SaveSnippetDialog
 } from '../../sql';
+import { Modal } from '../../../../components/ui/modal';
+import { formatCellValue } from '../../utils/sqlFormatter';
 
 const SqlEditor: React.FC = () => {
   const [sql, setSql] = useState('SELECT * FROM users LIMIT 10;');
@@ -19,6 +21,8 @@ const SqlEditor: React.FC = () => {
   const [loadingSnippets, setLoadingSnippets] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
+  const [pendingExport, setPendingExport] = useState<{ columns: string[]; data: any[] } | null>(null);
 
   useEffect(() => {
     fetchSnippets();
@@ -56,26 +60,17 @@ const SqlEditor: React.FC = () => {
       setResults(null);
 
       const data = await sqlService.executeQuery(sql);
-      setResults(data);
+      
+      // Check if the query failed (SQL error, not HTTP error)
+      if (!data.success && data.error) {
+        setError(data.error);
+        setResults(null);
+      } else {
+        setResults(data);
+      }
 
       // Save to history
-      if (data.results) {
-        // Multiple statements
-        await sqlService.saveQueryToHistory(
-          sql,
-          data.is_read_only || false,
-          data.total_execution_time || 0,
-          data.total_rows_affected || 0
-        );
-      } else {
-        // Single statement
-        await sqlService.saveQueryToHistory(
-          sql,
-          data.is_read_only || false,
-          data.execution_time || 0,
-          data.row_count || 0
-        );
-      }
+      await sqlService.saveQueryToHistory(sql, data);
 
       // Refresh history
       fetchHistory();
@@ -85,7 +80,14 @@ const SqlEditor: React.FC = () => {
       
       // Save failed query to history
       try {
-        await sqlService.saveQueryToHistory(sql, true, 0, 0, err.message);
+        const errorResult: SqlQueryResult = {
+          success: false,
+          is_read_only: true,
+          execution_time: 0,
+          row_count: 0,
+          error: err.message
+        };
+        await sqlService.saveQueryToHistory(sql, errorResult);
         fetchHistory();
       } catch (historyErr) {
         console.error('Error saving to history:', historyErr);
@@ -125,6 +127,50 @@ const SqlEditor: React.FC = () => {
 
   const handleCopyToClipboard = () => {
     navigator.clipboard.writeText(sql);
+  };
+
+  const toCsv = (columns: string[], data: any[]) => {
+    const escapeCsv = (val: string) => {
+      const needsQuotes = /[",\n]/.test(val);
+      const escaped = val.replace(/"/g, '""');
+      return needsQuotes ? `"${escaped}"` : escaped;
+    };
+    const header = columns.map(c => escapeCsv(c)).join(',');
+    const rows = data.map(row => columns.map(col => escapeCsv(formatCellValue(row[col]))).join(','));
+    return [header, ...rows].join('\n');
+  };
+
+  const toTsv = (columns: string[], data: any[]) => {
+    const header = columns.join('\t');
+    const rows = data.map(row => columns.map(col => formatCellValue(row[col])).join('\t'));
+    return [header, ...rows].join('\n');
+  };
+
+  const triggerDownload = (content: string, mime: string, extension: string) => {
+    const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = url;
+    a.download = `results-${ts}.${extension}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadFormat = (format: 'csv' | 'text') => {
+    if (!pendingExport) return;
+    const { columns, data } = pendingExport;
+    if (format === 'csv') {
+      const csv = toCsv(columns, data);
+      triggerDownload(csv, 'text/csv', 'csv');
+    } else {
+      const tsv = toTsv(columns, data);
+      triggerDownload(tsv, 'text/plain', 'txt');
+    }
+    setDownloadDialogOpen(false);
+    setPendingExport(null);
   };
 
   return (
@@ -190,12 +236,25 @@ const SqlEditor: React.FC = () => {
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600"></div>
               </div>
             ) : error ? (
-              <div className="mt-4 p-4 bg-error-50 dark:bg-error-900/30 text-error-600 dark:text-error-400 rounded-md">
-                <div className="font-medium">Error Executing Query</div>
-                <div>{error}</div>
+              <div className="mt-4 p-4 bg-error-50 dark:bg-error-900/30 border border-error-200 dark:border-error-700 rounded-lg">
+                <div className="flex items-start">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-error-600 dark:text-error-400 mr-2 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <div className="flex-1">
+                    <div className="font-semibold text-error-700 dark:text-error-300 mb-1">Error Executing Query</div>
+                    <div className="text-sm text-error-600 dark:text-error-400 whitespace-pre-wrap font-mono">{error}</div>
+                  </div>
+                </div>
               </div>
             ) : (
-              <SqlResultsTable results={results} />
+              <SqlResultsTable 
+                results={results}
+                onDownloadRequest={({ columns, data }) => {
+                  setPendingExport({ columns, data });
+                  setDownloadDialogOpen(true);
+                }}
+              />
             )}
           </div>
         </div>
@@ -259,6 +318,28 @@ const SqlEditor: React.FC = () => {
         onClose={() => setSaveDialogOpen(false)}
         onSave={handleSaveSnippet}
       />
+
+      <Modal
+        isOpen={downloadDialogOpen}
+        onClose={() => setDownloadDialogOpen(false)}
+        title="Download results as"
+        size="sm"
+      >
+        <div className="flex items-center justify-center space-x-3">
+          <button
+            onClick={() => handleDownloadFormat('csv')}
+            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-md text-sm"
+          >
+            CSV
+          </button>
+          <button
+            onClick={() => handleDownloadFormat('text')}
+            className="px-4 py-2 border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-800 hover:bg-secondary-50 dark:hover:bg-secondary-700 rounded-md text-sm text-secondary-700 dark:text-secondary-300"
+          >
+            Text
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 };
