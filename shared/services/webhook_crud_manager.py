@@ -369,10 +369,10 @@ class WebhookCRUDManager:
                     name = $2, description = $3, provider = $4,
                     provider_event_type = $5, source_url = $6, secret_key = $7,
                     is_active = $8, rate_limit_per_minute = $9,
-                    max_queue_size = $11, retry_enabled = $12, retry_attempts = $13,
-                    retry_backoff_strategy = $14, retry_delay_seconds = $15,
-                    retry_max_delay_seconds = $16, payload_schema = $17,
-                    expected_headers = $18, transform_script = $19, updated_at = $20
+                    max_queue_size = $10, retry_enabled = $11, retry_attempts = $12,
+                    retry_backoff_strategy = $13, retry_delay_seconds = $14,
+                    retry_max_delay_seconds = $15, payload_schema = $16,
+                    expected_headers = $17, transform_script = $18, updated_at = $19
                 WHERE id = $1
             """,
             str(webhook.id),

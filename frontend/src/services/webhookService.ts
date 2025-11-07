@@ -10,6 +10,7 @@ export interface Webhook {
   provider_event_type?: string;
   source_url?: string;
   webhook_token: string;
+  secret_key?: string;
   path_segment: string;
   is_active: boolean;
   rate_limit_per_minute: number;
@@ -130,6 +131,7 @@ const normalizeWebhook = (r: any): Webhook => ({
   provider_event_type: r.provider_event_type || undefined,
   source_url: r.source_url || undefined,
   webhook_token: r.webhook_token,
+  secret_key: r.secret_key || undefined,
   path_segment: r.path_segment,
   is_active: r.is_active,
   rate_limit_per_minute: r.rate_limit_per_minute,

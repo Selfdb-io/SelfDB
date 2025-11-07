@@ -55,7 +55,7 @@ class CreateFunctionRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=1000)
     code: str = Field(..., min_length=1)
-    runtime: str = Field(default="deno", pattern="^(deno|node|python)$")
+    runtime: str = Field(default="deno", pattern="^deno$")
     timeout_seconds: int = Field(default=30, ge=5, le=300)
     memory_limit_mb: int = Field(default=512, ge=128, le=4096)
     max_concurrent: int = Field(default=10, ge=1, le=100)
@@ -580,6 +580,34 @@ async def update_function(
             updates=updates
         )
         
+        # Redeploy to Deno runtime if code was updated
+        if request.code is not None and function_deployment_manager:
+            try:
+                deployment_result = await function_deployment_manager.deploy_function(
+                    function_name=updated_function.name,
+                    code=updated_function.code,
+                    is_active=updated_function.is_active,
+                    env_vars=updated_function.env_vars
+                )
+                # Update deployment status in database
+                await function_crud_manager.update_deployment_status(
+                    function_id=updated_function.id,
+                    status=DeploymentStatus.DEPLOYED if deployment_result["success"] else DeploymentStatus.FAILED,
+                    error=None if deployment_result["success"] else deployment_result.get("message", "Deployment failed")
+                )
+                logger.info(f"Redeployed function {updated_function.name}: {deployment_result}")
+            except Exception as deploy_exc:
+                logger.error(f"Failed to redeploy function {updated_function.name}: {deploy_exc}")
+                # Update deployment status to failed but don't fail the update
+                try:
+                    await function_crud_manager.update_deployment_status(
+                        function_id=updated_function.id,
+                        status=DeploymentStatus.FAILED,
+                        error=str(deploy_exc)
+                    )
+                except Exception as status_exc:
+                    logger.error(f"Failed to update deployment status for {updated_function.name}: {status_exc}")
+        
         return FunctionResponse(
             id=str(updated_function.id),
             name=updated_function.name,
@@ -648,14 +676,16 @@ async def set_function_state(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Service unavailable")
     
     try:
-        function = await function_crud_manager.get_function(function_id)
+        func_id = uuid.UUID(function_id)
+        function = await function_crud_manager.get_function(func_id)
         
         if str(function.owner_id) != current_user.get("id"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to modify this function")
         
-        updated_function = await function_crud_manager.set_function_state(
-            function_id=function_id,
-            is_active=request.is_active
+        # Update function with new state
+        updated_function = await function_crud_manager.update_function(
+            function_id=func_id,
+            updates={"is_active": request.is_active}
         )
         
         return FunctionResponse(
@@ -722,6 +752,15 @@ async def delete_function(
         if str(function.owner_id) != current_user.get("id"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this function")
         
+        # Remove function from Deno runtime before deleting from database
+        if function_deployment_manager:
+            try:
+                undeploy_result = await function_deployment_manager.undeploy_function(function.name)
+                logger.info(f"Undeployed function {function.name}: {undeploy_result}")
+            except Exception as undeploy_exc:
+                logger.warning(f"Failed to undeploy function {function.name} from runtime: {undeploy_exc}")
+                # Continue with database deletion even if undeploy fails
+        
         await function_crud_manager.delete_function(function_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     
@@ -746,6 +785,7 @@ async def set_env_vars(
     Set environment variables for a function.
     
     Variables are encrypted at rest and never exposed in responses.
+    Automatically redeploys function to Deno with new env vars.
     
     Args:
         function_id: Function UUID
@@ -766,20 +806,51 @@ async def set_env_vars(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Service unavailable")
     
     try:
-        function = await function_crud_manager.get_function(function_id)
+        func_id = uuid.UUID(function_id)
+        function = await function_crud_manager.get_function(func_id)
         
         if str(function.owner_id) != current_user.get("id"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to modify this function")
         
-        updated_function = await function_crud_manager.set_env_vars(
-            function_id=function_id,
-            env_vars=request.env_vars
+        # Update function with new env vars
+        updated_function = await function_crud_manager.update_function(
+            function_id=func_id,
+            updates={"env_vars": request.env_vars}
         )
+        
+        # Redeploy to Deno runtime with updated env vars
+        if function_deployment_manager:
+            try:
+                deployment_result = await function_deployment_manager.deploy_function(
+                    function_name=updated_function.name,
+                    code=updated_function.code,
+                    is_active=updated_function.is_active,
+                    env_vars=updated_function.env_vars
+                )
+                # Update deployment status in database
+                await function_crud_manager.update_deployment_status(
+                    function_id=updated_function.id,
+                    status=DeploymentStatus.DEPLOYED if deployment_result["success"] else DeploymentStatus.FAILED,
+                    error=None if deployment_result["success"] else deployment_result.get("message", "Deployment failed")
+                )
+                logger.info(f"Redeployed function {updated_function.name} with new env vars: {deployment_result}")
+            except Exception as deploy_exc:
+                logger.error(f"Failed to redeploy function {updated_function.name} with env vars: {deploy_exc}")
+                # Update deployment status to failed but don't fail the env var update
+                try:
+                    await function_crud_manager.update_deployment_status(
+                        function_id=updated_function.id,
+                        status=DeploymentStatus.FAILED,
+                        error=str(deploy_exc)
+                    )
+                except Exception as status_exc:
+                    logger.error(f"Failed to update deployment status for {updated_function.name}: {status_exc}")
         
         return FunctionResponse(
             id=str(updated_function.id),
             name=updated_function.name,
             description=updated_function.description,
+            code=updated_function.code,
             runtime=updated_function.runtime.value,
             owner_id=str(updated_function.owner_id),
             is_active=updated_function.is_active,

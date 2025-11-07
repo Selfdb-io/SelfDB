@@ -6,7 +6,6 @@ import { Label } from '../../../../components/ui/label';
 import { Input } from '../../../../components/ui/input';
 import { Textarea } from '../../../../components/ui/textarea';
 import { Button } from '../../../../components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../../components/ui/select';
 
 interface FunctionFormProps {
   isOpen: boolean;
@@ -24,7 +23,6 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [code, setCode] = useState('');
-  const [runtime, setRuntime] = useState('deno');
   const [timeoutSeconds, setTimeoutSeconds] = useState(30);
   const [memoryLimitMb, setMemoryLimitMb] = useState(512);
   const [maxConcurrent, setMaxConcurrent] = useState(10);
@@ -36,9 +34,9 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
   useEffect(() => {
     if (isOpen && !editFunction) {
       resetForm();
-      // Seed with local default snippet
+      // Seed with local default snippet for Deno/TypeScript
       setCode(`// Add your function code here
-// Available runtimes: deno, node, python
+// Runtime: Deno (TypeScript/JavaScript)
 
 export default async function(request, context) {
   const { env } = context;
@@ -57,7 +55,6 @@ export default async function(request, context) {
       setName(editFunction.name);
       setDescription(editFunction.description || '');
       setCode(editFunction.code || '');
-      setRuntime(editFunction.runtime || 'deno');
       setTimeoutSeconds(editFunction.timeout_seconds || 30);
       setMemoryLimitMb(editFunction.memory_limit_mb || 512);
       setMaxConcurrent(editFunction.max_concurrent || 10);
@@ -79,7 +76,6 @@ export default async function(request, context) {
     setName('');
     setDescription('');
     setCode('');
-    setRuntime('deno');
     setTimeoutSeconds(30);
     setMemoryLimitMb(512);
     setMaxConcurrent(10);
@@ -114,12 +110,12 @@ export default async function(request, context) {
           await setFunctionEnvVars(editFunction.id, envVars);
         }
       } else {
-        // For creation, include all fields
+        // For creation, include all fields (always use Deno runtime)
         const createPayload: CreateFunctionRequest = {
           name,
           description: description || undefined,
           code,
-          runtime,
+          runtime: 'deno',
           timeout_seconds: timeoutSeconds,
           memory_limit_mb: memoryLimitMb,
           max_concurrent: maxConcurrent,
@@ -272,24 +268,6 @@ export default async function(request, context) {
               rows={2}
             />
           </div>
-
-          {!editFunction && (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="runtime">Runtime</Label>
-                <Select value={runtime} onValueChange={setRuntime}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select runtime" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="deno">Deno (TypeScript/JavaScript)</SelectItem>
-                    <SelectItem value="node">Node.js</SelectItem>
-                    <SelectItem value="python">Python</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </>
-          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

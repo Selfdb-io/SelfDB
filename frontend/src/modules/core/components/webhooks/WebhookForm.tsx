@@ -56,7 +56,8 @@ const WebhookForm: React.FC<WebhookFormProps> = ({
       setProvider(editWebhook.provider || '');
       setProviderEventType(editWebhook.provider_event_type || '');
       setSourceUrl(editWebhook.source_url || '');
-      setSecretKey(editWebhook.webhook_token); // Note: This will be masked in real implementation
+      // Load the actual secret_key for editing
+      setSecretKey(editWebhook.secret_key || '');
       setRateLimitPerMinute(editWebhook.rate_limit_per_minute);
       setRetryAttempts(editWebhook.retry_attempts);
       setRetryBackoffStrategy(editWebhook.retry_backoff_strategy as 'exponential' | 'linear' | 'fixed');
@@ -96,6 +97,7 @@ const WebhookForm: React.FC<WebhookFormProps> = ({
         const updatePayload: UpdateWebhookRequest = {
           name,
           description: description || undefined,
+          secret_key: secretKey || undefined, // Include if user provided a new one
           is_active: isActive,
           rate_limit_per_minute: rateLimitPerMinute,
           retry_attempts: retryAttempts,
@@ -226,7 +228,7 @@ const WebhookForm: React.FC<WebhookFormProps> = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="secretKey">Secret Key</Label>
+            <Label htmlFor="secretKey">Secret Key {editWebhook && <span className="text-xs text-secondary-500">(leave blank to keep current)</span>}</Label>
             <div className="relative">
               <Input
                 id="secretKey"
@@ -234,7 +236,7 @@ const WebhookForm: React.FC<WebhookFormProps> = ({
                 value={secretKey}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSecretKey(e.target.value)}
                 placeholder="whsec_..."
-                required
+                required={!editWebhook}
               />
               <button
                 type="button"
@@ -246,6 +248,7 @@ const WebhookForm: React.FC<WebhookFormProps> = ({
                 {showSecret ? <IoMdEyeOff className="h-5 w-5" /> : <IoMdEye className="h-5 w-5" />}
               </button>
             </div>
+            {editWebhook && <p className="text-xs text-secondary-500">You can update this secret to rotate credentials or fix setup errors.</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

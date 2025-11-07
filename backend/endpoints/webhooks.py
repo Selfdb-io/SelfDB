@@ -62,6 +62,7 @@ class UpdateWebhookRequest(BaseModel):
     """Request model for updating a webhook."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=1000)
+    secret_key: Optional[str] = Field(None, min_length=1)
     is_active: Optional[bool] = None
     rate_limit_per_minute: Optional[int] = Field(None, ge=1, le=10000)
     retry_attempts: Optional[int] = Field(None, ge=1, le=10)
@@ -81,6 +82,7 @@ class WebhookResponse(BaseModel):
     provider_event_type: Optional[str]
     source_url: Optional[str]
     webhook_token: str
+    secret_key: str
     path_segment: str
     is_active: bool
     rate_limit_per_minute: int
@@ -262,6 +264,7 @@ async def create_webhook(
             provider_event_type=webhook.provider_event_type,
             source_url=webhook.source_url,
             webhook_token=webhook.webhook_token,
+            secret_key=webhook.secret_key,
             path_segment=webhook.path_segment,
             is_active=webhook.is_active,
             rate_limit_per_minute=webhook.rate_limit_per_minute,
@@ -363,6 +366,7 @@ async def list_webhooks(
                     provider_event_type=w.provider_event_type,
                     source_url=w.source_url,
                     webhook_token=w.webhook_token,
+                    secret_key=w.secret_key,
                     path_segment=w.path_segment,
                     is_active=w.is_active,
                     rate_limit_per_minute=w.rate_limit_per_minute,
@@ -436,6 +440,7 @@ async def get_webhook(
             provider_event_type=webhook.provider_event_type,
             source_url=webhook.source_url,
             webhook_token=webhook.webhook_token,
+            secret_key=webhook.secret_key,
             path_segment=webhook.path_segment,
             is_active=webhook.is_active,
             rate_limit_per_minute=webhook.rate_limit_per_minute,
@@ -504,6 +509,8 @@ async def update_webhook(
             updates["name"] = request.name
         if request.description is not None:
             updates["description"] = request.description
+        if request.secret_key is not None:
+            updates["secret_key"] = request.secret_key
         if request.is_active is not None:
             updates["is_active"] = request.is_active
         if request.rate_limit_per_minute is not None:
@@ -528,6 +535,7 @@ async def update_webhook(
             provider_event_type=updated_webhook.provider_event_type,
             source_url=updated_webhook.source_url,
             webhook_token=updated_webhook.webhook_token,
+            secret_key=updated_webhook.secret_key,
             path_segment=updated_webhook.path_segment,
             is_active=updated_webhook.is_active,
             rate_limit_per_minute=updated_webhook.rate_limit_per_minute,
