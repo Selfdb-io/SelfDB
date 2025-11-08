@@ -1,4 +1,5 @@
-# SelfDB v0.05 · early beta [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Selfdb-io/SelfDB)
+# SelfDB v0.05 · early beta [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Selfdb-io/SelfDB) [![GitHub stars](https://img.shields.io/github/stars/Selfdb-io/SelfDB?style=social)](https://github.com/Selfdb-io/SelfDB/stargazers)
+
 
 ![SelfDB Dashboard](Screenshot%202025-11-03%20at%2016.45.23.png)
 
