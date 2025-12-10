@@ -1,3 +1,6 @@
+## 🚀 SelfDB v0.05 Stable Version Released  
+The latest stable release is now available on our website.  👉 [Buy Here](https://selfdb.io)
+
 # SelfDB v0.05 · early beta [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Selfdb-io/SelfDB) [![GitHub stars](https://img.shields.io/github/stars/Selfdb-io/SelfDB?style=social)](https://github.com/Selfdb-io/SelfDB/stargazers) [![GitHub Pre-Release](https://img.shields.io/github/v/release/Selfdb-io/SelfDB?include_prereleases)](https://github.com/Selfdb-io/SelfDB/releases)
 
 
