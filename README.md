@@ -1,5 +1,21 @@
-## 🚀 SelfDB v0.05 Stable Version Released  
-The latest stable release is now available on our website.  👉 [Buy Here](https://selfdb.io)
+🚀 **SelfDB v0.05 Stable Released!**
+
+Get the optimized **Stable edition** (faster, lighter, more secure & modular) 👉 [Buy Stable Here](https://selfdb.io)
+
+Both versions are fully self-hosted with complete source code access, but Stable delivers significant enhancements for production use:
+
+| Feature                    | Early Beta (GitHub) | Stable Edition (Paid) |
+|----------------------------|---------------------|----------------------|
+| **Performance**            | Standard            | **50% faster, 50% lighter** |
+| **Security**               | Community-driven    | **Hardened & production-ready** |
+| **Configuration**          | Manual setup        | **Pre-optimized** |
+| **Async Enhancements**     | Basic               | **Full async improvements** |
+| **Updates**                | Manual (GitHub)     | **Instant + lifetime** |
+| **Support**                | Community only      | **Priority support & exclusive board** |
+| **Best For**               | Testing & hobby     | **Production & AI apps** |
+| **Price**                  | Free                | **One-time lifetime** |
+
+Upgrade to Stable for a production-ready, polished experience without the hassle of manual tweaks. No subscriptions, no lock-in — own it forever!
 
 # SelfDB v0.05 · early beta [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Selfdb-io/SelfDB) [![GitHub stars](https://img.shields.io/github/stars/Selfdb-io/SelfDB?style=social)](https://github.com/Selfdb-io/SelfDB/stargazers) [![GitHub Pre-Release](https://img.shields.io/github/v/release/Selfdb-io/SelfDB?include_prereleases)](https://github.com/Selfdb-io/SelfDB/releases)
 
