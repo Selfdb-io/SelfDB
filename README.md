@@ -2,7 +2,7 @@
 
 Get the optimized **Stable edition** (faster, lighter, more secure & modular) 👉 [Buy Stable Here](https://selfdb.io)
 
-Both versions are fully self-hosted with complete source code access, but Stable delivers significant enhancements for production use:
+Both versions are fully self-hosted with complete source code access, but Stable delivers significant enhancements for production use based on the rewrite in [SelfDB-mini](https://github.com/Selfdb-io/SelfDB-mini):
 
 | Feature                    | Early Beta (GitHub) | Stable Edition (Paid) |
 |----------------------------|---------------------|----------------------|
